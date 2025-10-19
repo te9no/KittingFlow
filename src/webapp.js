@@ -12,7 +12,11 @@ function doGet(e){
 }
 
 function doPost(e){
+  Logger.log(JSON.stringify(data)); Logger.log('action=' + action);
   try{
+    Logger.log(e && e.postData && e.postData.contents);
+    Logger.log('parsed=' + JSON.stringify(data));
+    Logger.log('action=' + action);
     const data = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     // shared token check (optional). Set Script Properties: API_TOKEN
     const expected = PropertiesService.getScriptProperties().getProperty('API_TOKEN');
