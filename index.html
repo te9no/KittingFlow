@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KittingFlow (Netlify Frontend)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <style>
+    :root{ --gap:12px }
+    body{ font-family: system-ui,-apple-system,Segoe UI,Roboto,Noto Sans JP,sans-serif; margin:16px; color:#222 }
+    h1{ margin:0 0 12px }
+    .row{ display:flex; gap:var(--gap); margin:var(--gap) 0; flex-wrap:wrap }
+    input,button,select{ font-size:16px; padding:10px }
+    input,select{ flex:1 1 220px }
+    button{ border:1px solid #ccc; background:#fff; border-radius:10px }
+    .card{ border:1px solid #ddd; border-radius:12px; padding:14px; margin-top:16px }
+    img{ max-width:220px; max-height:220px; object-fit:contain; border:1px solid #eee }
+    .muted{ color:#666; font-size:12px }
+  </style>
+</head>
+<body>
+  <h1>KittingFlow</h1>
+  <div class="row">
+    <input id="pid" placeholder="製品ID (例: MK-...)" />
+    <button id="start">開始</button>
+    <button id="snapshot">現在の状態</button>
+  </div>
+
+  <div class="card" id="view" style="display:none">
+    <div><b>製品ID:</b> <span id="v-id"></span></div>
+    <div><b>製品名:</b> <span id="v-name"></span></div>
+    <div style="margin-top:6px"><b>部品:</b> <span id="v-part"></span></div>
+    <div style="margin-top:6px"><img id="v-img" alt="" /></div>
+    <div class="row">
+      <button id="next">次へ ▶</button>
+      <button id="pause">⏸ 中断</button>
+    </div>
+  </div>
+
+  <p class="muted">バックエンド: Netlify Functions → GAS /exec</p>
+
+  <script>
+    const api = async (payload)=>{
+      const res = await fetch('/.netlify/functions/api', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(()=>({ok:false,error:'invalid json'}));
+      if(!res.ok || !data.ok){ throw new Error(data.error || 'request failed'); }
+      return data;
+    };
+    function qs(id){ return document.getElementById(id); }
+    function setView(d){
+      qs('view').style.display = 'block';
+      qs('v-id').textContent = d.id || '';
+      qs('v-name').textContent = d.name || '';
+      const partLine = (d.partId||'') + (d.partName?(' / '+d.partName):'') + (d.qty?(' / 必要数 '+d.qty):'');
+      qs('v-part').textContent = partLine;
+      const img = qs('v-img');
+      if(d.img){ img.src = d.img; img.style.display = 'block'; } else { img.removeAttribute('src'); img.style.display='none'; }
+    }
+    async function doStart(){
+      const id = qs('pid').value.trim(); if(!id){ alert('製品IDを入力してください'); return; }
+      try{ const {data} = await api({action:'start', id}); setView(data); }
+      catch(e){ alert('エラー: '+e.message); }
+    }
+    async function doSnapshot(){
+      const id = qs('pid').value.trim(); if(!id){ alert('製品IDを入力してください'); return; }
+      try{ const {data} = await api({action:'snapshot', id}); setView(data); }
+      catch(e){ alert('エラー: '+e.message); }
+    }
+    async function doNext(){
+      const id = qs('pid').value.trim(); if(!id){ alert('製品IDを入力してください'); return; }
+      try{ const {data} = await api({action:'next', id}); setView(data); }
+      catch(e){ alert('エラー: '+e.message); }
+    }
+    async function doPause(){
+      const id = qs('pid').value.trim(); if(!id){ alert('製品IDを入力してください'); return; }
+      try{ await api({action:'pause', id}); alert('中断しました'); }
+      catch(e){ alert('エラー: '+e.message); }
+    }
+    qs('start').onclick = doStart;
+    qs('snapshot').onclick = doSnapshot;
+    qs('next').onclick = doNext;
+    qs('pause').onclick = doPause;
+    // idクエリがあれば自動表示
+    const m = location.search.match(/id=([^&]+)/);
+    if(m){ qs('pid').value = decodeURIComponent(m[1]); doSnapshot(); }
+  </script>
+</body>
+</html>
+

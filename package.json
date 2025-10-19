@@ -1,0 +1,14 @@
+{
+  "name": "kittingflow",
+  "version": "1.0.0",
+  "description": "KittingFlow 製造補助システム (Apps Script + VSCode)",
+  "scripts": {
+    "deploy": "clasp push; clasp deploy -d 'Auto deploy from VSCode'",
+    "push": "clasp push",
+    "pull": "clasp pull"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@google/clasp": "^2.4.0"
+  }
+}
