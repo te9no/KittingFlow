@@ -4,8 +4,18 @@
 const fetch = global.fetch || ((...args) => import('node-fetch').then(({ default: f }) => f(...args)));
 
 exports.handler = async (event) => {
+  const t0 = Date.now();
+  const reqId = getReqId(event);
+  log('INFO', 'request:start', reqId, {
+    method: event.httpMethod,
+    path: event.path,
+    ct: (event.headers && (event.headers['content-type'] || event.headers['Content-Type'])) || undefined,
+    bodyLen: (event.body && Buffer.byteLength(event.body, 'utf8')) || 0
+  });
   if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 200, headers: corsHeaders(), body: '' };
+    const res = { statusCode: 200, headers: withResMeta(corsHeaders(), reqId, t0), body: '' };
+    log('INFO', 'request:options', reqId, { ms: Date.now() - t0 });
+    return res;
   }
   try {
     const endpoint = process.env.GAS_ENDPOINT;
@@ -35,11 +45,20 @@ exports.handler = async (event) => {
       payload = { ok: false, error: looksHtml ? 'html-from-gas' : 'non-json-from-gas', detail: text.slice(0, 4000) };
     }
     if (typeof payload.ok === 'undefined') payload.ok = res.ok;
+    const out = { status: res.status, ...payload };
+    log('INFO', 'request:done', reqId, {
+      gasStatus: res.status,
+      ok: !!payload.ok,
+      ct,
+      ms: Date.now() - t0,
+      error: payload.ok ? undefined : (payload.error || undefined)
+    });
     // Always return 200; front checks ok/status to handle errors uniformly
-    return { statusCode: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders() }, body: JSON.stringify({ status: res.status, ...payload }) };
+    return { statusCode: 200, headers: withResMeta({ 'Content-Type': 'application/json', ...corsHeaders() }, reqId, t0), body: JSON.stringify(out) };
   } catch (err) {
+    log('ERROR', 'request:catch', reqId, { ms: Date.now() - t0, error: String(err) });
     // Return 200 with error payload to ease CORS/debug handling
-    return json({ ok: false, error: String(err) });
+    return { statusCode: 200, headers: withResMeta({ 'Content-Type': 'application/json', ...corsHeaders() }, reqId, t0), body: JSON.stringify({ ok: false, error: String(err) }) };
   }
 };
 
@@ -53,4 +72,21 @@ function corsHeaders() {
 }
 function json(obj, status = 200) {
   return { statusCode: status, headers: { 'Content-Type': 'application/json', ...corsHeaders() }, body: JSON.stringify(obj) };
+}
+
+function getReqId(event){
+  const hdr = (event && event.headers) || {};
+  return hdr['x-nf-request-id'] || hdr['X-NF-Request-ID'] || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
+}
+function withResMeta(headers, reqId, t0){
+  return { ...headers, 'X-Request-Id': reqId, 'X-Handler-Time': String(Date.now() - t0) };
+}
+function log(level, tag, reqId, meta){
+  try{
+    const base = { level, tag, reqId, ts: new Date().toISOString() };
+    // Avoid logging secrets
+    const safe = { ...meta };
+    if (safe.token) safe.token = '***';
+    console.log(JSON.stringify({ ...base, ...safe }));
+  }catch(e){ /* noop */ }
 }

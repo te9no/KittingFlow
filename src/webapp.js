@@ -3,6 +3,7 @@
 function doGet(e){
   const p = (e && e.parameter) || {};
   const page = String(p.page || '').toLowerCase();
+  try{ logInfo_('doGet', { page: page, id: p.id }); }catch(_){ }
   if (!page || page === 'menu') return HtmlService.createHtmlOutput(renderMenu_());
   if (page === 'start') return HtmlService.createHtmlOutput(renderStart_());
   if (page === 'pick')  return HtmlService.createHtmlOutput(p.id ? renderPick_(p.id) : renderMissingId_('pick'));
@@ -20,11 +21,13 @@ function doPost(e){
     Logger.log('raw=' + raw);
     Logger.log('parsed=' + JSON.stringify(data));
     Logger.log('action=' + action);
+    try{ logInfo_('doPost:recv', { action: action, hasToken: !!data.token, id: data.id, rawLen: raw.length }); }catch(_){ }
     // shared token check (optional). Set Script Properties: API_TOKEN
-    const expected = PropertiesService.getScriptProperties().getProperty('API_TOKEN');
+    const sp = PropertiesService.getScriptProperties();
+    const expected = sp.getProperty('API_TOKEN');
+    const debugResp = (String(sp.getProperty('DEBUG_RESPONSE')||'').toLowerCase()==='true') || (data && (data.debug===true || data.debug===1 || String(data.debug||'').toLowerCase()==='true'));
     if (expected && String(data.token || '') !== String(expected)) {
-      return ContentService.createTextOutput(JSON.stringify({ ok:false, error:'forbidden' }))
-        .setMimeType(ContentService.MimeType.JSON);
+      return jsonResponse_({ ok:false, error:'forbidden' }, debugResp);
     }
 
     // フェイルセーフ: action未指定なら一覧を返す
@@ -44,8 +47,8 @@ function doPost(e){
         }
         return items;
       })();
-      return ContentService.createTextOutput(JSON.stringify({ ok:true, data: items }))
-        .setMimeType(ContentService.MimeType.JSON);
+      try{ logInfo_('list:ok', { count: items.length }); }catch(_){ }
+      return jsonResponse_({ ok:true, data: items }, debugResp);
     }
 
     // list: 製品一覧を返す
@@ -64,30 +67,29 @@ function doPost(e){
         const nameIdx = localGetHeaderIndex_(H, ['製品名','Name','name']);
         items = rows.slice(1).map(function(r){ return { id: String(idIdx>=0? r[idIdx]: r[0]||''), name: String(nameIdx>=0? r[nameIdx]: r[1]||'') }; }).filter(function(x){ return x.id; });
       }
-      return ContentService.createTextOutput(JSON.stringify({ ok:true, data: items }))
-        .setMimeType(ContentService.MimeType.JSON);
+      return jsonResponse_({ ok:true, data: items }, debugResp);
     }
   if (action === 'snapshot'){
       const snap = getPickingSnapshotFixed_(data.id);
-      return ContentService.createTextOutput(JSON.stringify({ ok:true, data:snap }))
-        .setMimeType(ContentService.MimeType.JSON);
+      try{ logInfo_('snapshot:ok', { id: data.id, partId: snap.partId, partName: snap.partName, qty: snap.qty }); }catch(_){ }
+      return jsonResponse_({ ok:true, data:snap }, debugResp);
     }
     if (action === 'next'){
       if (typeof nextPart === 'function') nextPart();
       const snap = getPickingSnapshotFixed_(data.id);
-      return ContentService.createTextOutput(JSON.stringify({ ok:true, data:snap }))
-        .setMimeType(ContentService.MimeType.JSON);
+      try{ logInfo_('next:ok', { id: data.id, partId: snap.partId, partName: snap.partName, qty: snap.qty }); }catch(_){ }
+      return jsonResponse_({ ok:true, data:snap }, debugResp);
     }
     if (action === 'pause'){
       if (typeof pausePicking === 'function') pausePicking();
-      return ContentService.createTextOutput(JSON.stringify({ ok:true }))
-        .setMimeType(ContentService.MimeType.JSON);
+      try{ logInfo_('pause:ok', { id: data.id }); }catch(_){ }
+      return jsonResponse_({ ok:true }, debugResp);
     }
     if (action === 'start'){
       if (typeof startPickingWithProduct === 'function') startPickingWithProduct(data.id);
       const snap = getPickingSnapshotFixed_(data.id);
-      return ContentService.createTextOutput(JSON.stringify({ ok:true, data:snap }))
-        .setMimeType(ContentService.MimeType.JSON);
+      try{ logInfo_('start:ok', { id: data.id, partId: snap.partId, partName: snap.partName, qty: snap.qty }); }catch(_){ }
+      return jsonResponse_({ ok:true, data:snap }, debugResp);
     }
     if (action === 'resume'){
       const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -118,7 +120,7 @@ function doPost(e){
           const prodCol = H.indexOf('製品ID');
           const partCol = H.indexOf('部品ID');
           const key = String(s.getRange('D2').getValue()||data.id);
-          const list = pv.slice(1).filter(r => String(r[prodCol]) === key);
+          let list = pv.slice(1).filter(r => String(r[prodCol]) === key);
           const cur = String(s.getRange('B2').getValue()||'');
           const exists = cur && list.some(r => String(r[partCol]) === cur);
           if (!exists && list.length) s.getRange('B2').setValue(String(list[0][partCol]));
@@ -129,15 +131,13 @@ function doPost(e){
         updateManageProgress_(data.id, cur, '進行中');
       }
       const snap = getPickingSnapshotFixed_(data.id);
-      return ContentService.createTextOutput(JSON.stringify({ ok:true, data:snap }))
-        .setMimeType(ContentService.MimeType.JSON);
+      return jsonResponse_({ ok:true, data:snap }, debugResp);
     }
   }catch(err){
-    return ContentService.createTextOutput(JSON.stringify({ ok:false, error: err.message }))
-      .setMimeType(ContentService.MimeType.JSON);
+    try{ logError_('doPost:error', { message: err && err.message, stack: String(err && err.stack || '') }); }catch(_){ }
+    return jsonResponse_({ ok:false, error: err.message }, true);
   }
-  return ContentService.createTextOutput(JSON.stringify({ ok:false, error:'bad request' }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return jsonResponse_({ ok:false, error:'bad request' }, true);
 }
 
 // ----- Pages -----
@@ -189,7 +189,7 @@ function renderPick_(id){
   const rows = manage ? manage.getDataRange().getValues() : [];
   var name=''; var r=rows.find(function(x){return String(x[0])===String(id)}); if(r) name=String(r[1]||'');
   const prog = ss.getSheetByName('ピッキング進捗');
-  const partId = prog ? String(prog.getRange('B2').getValue()||'') : '';
+  let partId = prog ? String(prog.getRange('B2').getValue()||'') : '';
   const modelId = prog ? String(prog.getRange('D2').getValue()||'') : '';
   const parts = ss.getSheetByName('部品リスト');
   var partName='', qty='', img='';
@@ -202,7 +202,7 @@ function renderPick_(id){
       const nameCol = H.indexOf('部品名');
       const imgCol  = H.indexOf('画像URL');
       const qtyCol  = H.indexOf('必要数');
-      const list = pv.slice(1).filter(function(x){return String(x[prodCol]) === (modelId||id)});
+      let list = pv.slice(1).filter(function(x){return String(x[prodCol]) === (modelId||id)});
       const hit  = list.find(function(x){return String(x[partCol])===partId}) || list[0];
       if (hit){ partName = nameCol>=0? String(hit[nameCol]||''):''; qty = qtyCol>=0? String(hit[qtyCol]||''):''; img = imgCol>=0? String(hit[imgCol]||''):''; }
     }
@@ -268,7 +268,7 @@ function getPickingSnapshot_(id){
   const rows = manage ? manage.getDataRange().getValues() : [];
   var name=''; var r = rows.find(function(x){ return String(x[0])===String(id); }); if (r) name = String(r[1]||'');
   const prog = ss.getSheetByName('ピッキング進行');
-  const partId = prog ? String(prog.getRange('B2').getValue()||'') : '';
+  let partId = prog ? String(prog.getRange('B2').getValue()||'') : '';
   const modelId = prog ? String(prog.getRange('D2').getValue()||'') : '';
   const parts = ss.getSheetByName('部品リスト');
   var partName='', qty='', img='';
@@ -281,12 +281,123 @@ function getPickingSnapshot_(id){
       const nameCol = H.indexOf('部品名');
       const imgCol  = H.indexOf('画像URL');
       const qtyCol  = H.indexOf('必要数');
-      const list = pv.slice(1).filter(function(x){ return String(x[prodCol]) === (modelId||id); });
+      let list = pv.slice(1).filter(function(x){ return String(x[prodCol]) === (modelId||id); });
       const hit  = list.find(function(x){ return String(x[partCol])===partId; }) || list[0];
       if (hit){ partName = nameCol>=0? String(hit[nameCol]||''):''; qty = qtyCol>=0? String(hit[qtyCol]||''):''; img = imgCol>=0? String(hit[imgCol]||''):''; }
     }
   }
   return { id:id, name:name, partId:partId, partName:partName, qty:qty, img:img };
+}
+
+// ----- Logging helpers -----
+function logInfo_(tag, obj){
+  try{
+    Logger.log(tag + ' ' + JSON.stringify(obj));
+    sheetLog_('INFO', tag, obj);
+  }catch(_){ }
+}
+function logError_(tag, obj){
+  try{
+    Logger.log('ERROR ' + tag + ' ' + JSON.stringify(obj));
+    sheetLog_('ERROR', tag, obj);
+  }catch(_){ }
+}
+function sheetLog_(level, tag, obj){
+  try{
+    var sp = PropertiesService.getScriptProperties();
+    var enabled = String(sp.getProperty('ENABLE_SHEET_LOG')||'').toLowerCase();
+    if (!(enabled==='1' || enabled==='true' || enabled==='yes')) return;
+    var name = sp.getProperty('LOG_SHEET') || 'Logs';
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName(name) || ss.insertSheet(name);
+    sh.appendRow([new Date(), level, tag, JSON.stringify(obj||{})]);
+  }catch(_){ }
+}
+
+// JSON response helper with optional debug log injection
+function jsonResponse_(obj, debug){
+  try{
+    if (debug){
+      var logText = '';
+      try { logText = Logger.getLog(); } catch(_){ logText=''; }
+      obj = Object.assign({}, obj, { _debug: { log: logText } });
+    }
+  }catch(_){ }
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ----- Picking state mutators -----
+function ensureProgressSheet_(){
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName('ピッキング進行');
+  if (!sh){
+    sh = ss.insertSheet('ピッキング進行');
+    sh.getRange('A1').setValue('ステータス');
+    sh.getRange('B1').setValue('部品ID');
+    sh.getRange('C1').setValue('製品ID');
+    sh.getRange('D1').setValue('モデルID');
+  }
+  return sh;
+}
+function getPartsListFor_(modelId){
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const parts = ss.getSheetByName('部品リスト') || ss.getSheetByName('部品') || ss.getSheetByName('Parts');
+  if (!parts) return [];
+  const pv = parts.getDataRange().getValues();
+  if (pv.length < 2) return [];
+  const H = pv[0].map(String);
+  const prodCol = localGetHeaderIndex_(H, ['製品ID','ProductId','product_id']);
+  const partCol = localGetHeaderIndex_(H, ['部品ID','PartId','part_id']);
+  let rows = pv.slice(1).filter(r => prodCol<0 ? true : String(r[prodCol]) === String(modelId));
+  if (!rows.length) {
+    // Fallback: ignore model filter and take all rows
+    try{ logInfo_('parts:list:fallbackAll', { modelId }); }catch(_){ }
+    rows = pv.slice(1);
+  }
+  return rows.map(r => String(partCol>=0 ? r[partCol] : r[0])).filter(Boolean);
+}
+function startPickingWithProduct(id){
+  const sh = ensureProgressSheet_();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  // モデルIDは製品IDと同一で扱う（必要なら管理シートから変換）
+  let modelId = String(id);
+  try{
+    const manage = ss.getSheetByName('製品管理') || ss.getSheetByName('管理') || ss.getSheetByName('Manage') || ss.getSheetByName('Products');
+    if (manage){
+      const mv = manage.getDataRange().getValues();
+      if (mv.length>1){
+        const H = mv[0].map(String);
+        const idIdx = 0; // 製品IDは1列目想定
+        const modelIdx = localGetHeaderIndex_(H, ['レシピID','RecipeId','recipe_id','モデルID']);
+        const row = mv.slice(1).find(r => String(r[idIdx]) === String(id));
+        if (row && modelIdx>=0) modelId = String(row[modelIdx] || id);
+      }
+    }
+  }catch(_){ }
+  const list = getPartsListFor_(modelId);
+  const first = list.length ? list[0] : '';
+  sh.getRange('A2').setValue('開始');
+  sh.getRange('C2').setValue(id);
+  sh.getRange('D2').setValue(modelId);
+  if (first) sh.getRange('B2').setValue(first);
+  try{ logInfo_('startPickingWithProduct', { id, modelId, first }); }catch(_){ }
+}
+function nextPart(){
+  const sh = ensureProgressSheet_();
+  const modelId = String(sh.getRange('D2').getValue()||sh.getRange('C2').getValue()||'');
+  const cur = String(sh.getRange('B2').getValue()||'');
+  const list = getPartsListFor_(modelId);
+  if (!list.length) return;
+  const idx = Math.max(0, list.indexOf(cur));
+  const next = list[Math.min(idx+1, list.length-1)];
+  sh.getRange('B2').setValue(next);
+  try{ logInfo_('nextPart', { modelId, from: cur, to: next, total: list.length }); }catch(_){ }
+}
+function pausePicking(){
+  const sh = ensureProgressSheet_();
+  sh.getRange('A2').setValue('中断');
+  try{ logInfo_('pausePicking', { status: '中断' }); }catch(_){ }
 }
 function nextPartAndGetSnapshot(id){ if (typeof nextPart === 'function') nextPart(); return getPickingSnapshot_(id); }
 
@@ -313,7 +424,7 @@ function getPickingSnapshotFixed_(id){
 
   // 進行シート
   const prog = ss.getSheetByName('ピッキング進行');
-  const partId = prog ? String(prog.getRange('B2').getValue()||'') : '';
+  let partId = prog ? String(prog.getRange('B2').getValue()||'') : '';
   const modelId = prog ? String(prog.getRange('D2').getValue()||'') : '';
 
   // 部品一覧
@@ -330,14 +441,20 @@ function getPickingSnapshotFixed_(id){
       const nameCol = localGetHeaderIndex_(H, ['部品名','Name','name']);
       const imgCol  = localGetHeaderIndex_(H, ['画像URL','Image','image','img']);
       const qtyCol  = localGetHeaderIndex_(H, ['必要数','Qty','quantity']);
-      const list = pv.slice(1).filter(function(x){ return prodCol>=0 ? String(x[prodCol]) === (modelId||id) : true; });
+      let list = pv.slice(1).filter(function(x){ return prodCol>=0 ? String(x[prodCol]) === (modelId||id) : true; });
+      if (!list.length) { list = pv.slice(1); }
       const hit  = list.find(function(x){ return partCol>=0 ? String(x[partCol])===partId : false; }) || list[0];
       if (hit){
         partName = nameCol>=0? String(hit[nameCol]||''):'';
         qty      = qtyCol>=0?  String(hit[qtyCol]||''):'';
         img      = imgCol>=0?  String(hit[imgCol]||''):'';
+        if (!partId && partCol>=0) { try{ partId = String(hit[partCol]||''); logInfo_('snapshot:fillPartId', { from:'partsSheet', partId: partId }); }catch(_){ partId = String(hit[partCol]||''); }
+        }
       }
     }
   }
+  try{
+    logInfo_('snapshot:calc', { id:id, modelId:modelId, partId:partId, partName:partName, qty:qty, hasImg: !!img });
+  }catch(_){ }
   return { id:id, name:name, partId:partId, partName:partName, qty:qty, img:img };
 }
