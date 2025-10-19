@@ -1,1 +1,3 @@
 .clasp.json
+scripts/deploy-gas.js
+.gas-deploy.json

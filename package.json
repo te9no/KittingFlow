@@ -5,7 +5,10 @@
   "scripts": {
     "deploy": "clasp push; clasp deploy -d 'Auto deploy from VSCode'",
     "push": "clasp push",
-    "pull": "clasp pull"
+    "pull": "clasp pull",
+    "gas:deploy:init": "node scripts/deploy-gas.js --init",
+    "gas:deploy": "node scripts/deploy-gas.js",
+    "gas:deploy:set-netlify": "node scripts/deploy-gas.js --set-netlify"
   },
   "dependencies": {},
   "devDependencies": {

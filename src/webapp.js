@@ -68,13 +68,13 @@ function doPost(e){
         .setMimeType(ContentService.MimeType.JSON);
     }
   if (action === 'snapshot'){
-      const snap = getPickingSnapshot_(data.id);
+      const snap = getPickingSnapshotFixed_(data.id);
       return ContentService.createTextOutput(JSON.stringify({ ok:true, data:snap }))
         .setMimeType(ContentService.MimeType.JSON);
     }
     if (action === 'next'){
       if (typeof nextPart === 'function') nextPart();
-      const snap = getPickingSnapshot_(data.id);
+      const snap = getPickingSnapshotFixed_(data.id);
       return ContentService.createTextOutput(JSON.stringify({ ok:true, data:snap }))
         .setMimeType(ContentService.MimeType.JSON);
     }
@@ -85,7 +85,7 @@ function doPost(e){
     }
     if (action === 'start'){
       if (typeof startPickingWithProduct === 'function') startPickingWithProduct(data.id);
-      const snap = getPickingSnapshot_(data.id);
+      const snap = getPickingSnapshotFixed_(data.id);
       return ContentService.createTextOutput(JSON.stringify({ ok:true, data:snap }))
         .setMimeType(ContentService.MimeType.JSON);
     }
@@ -128,7 +128,7 @@ function doPost(e){
         const cur = String(s.getRange('B2').getValue()||'');
         updateManageProgress_(data.id, cur, '進行中');
       }
-      const snap = getPickingSnapshot_(data.id);
+      const snap = getPickingSnapshotFixed_(data.id);
       return ContentService.createTextOutput(JSON.stringify({ ok:true, data:snap }))
         .setMimeType(ContentService.MimeType.JSON);
     }
@@ -299,4 +299,45 @@ function localGetHeaderIndex_(headerRow, names){
     if (idx >= 0) return idx;
   }
   return -1;
+}
+
+// Clean snapshot helper using sheet/header Japanese names
+function getPickingSnapshotFixed_(id){
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  // 製品名（任意）
+  const manageCandidates = ['製品管理','管理','Manage','Products'];
+  let manage = null;
+  for (var i=0;i<manageCandidates.length;i++){ manage = ss.getSheetByName(manageCandidates[i]); if (manage) break; }
+  const rows = manage ? manage.getDataRange().getValues() : [];
+  var name=''; var r = rows.find(function(x){ return String(x[0])===String(id); }); if (r) name = String(r[1]||'');
+
+  // 進行シート
+  const prog = ss.getSheetByName('ピッキング進行');
+  const partId = prog ? String(prog.getRange('B2').getValue()||'') : '';
+  const modelId = prog ? String(prog.getRange('D2').getValue()||'') : '';
+
+  // 部品一覧
+  const partsCandidates = ['部品リスト','部品','Parts'];
+  let parts = null;
+  for (var j=0;j<partsCandidates.length;j++){ parts = ss.getSheetByName(partsCandidates[j]); if (parts) break; }
+  var partName='', qty='', img='';
+  if (parts){
+    const pv = parts.getDataRange().getValues();
+    if (pv.length>1){
+      const H = pv[0].map(String);
+      const prodCol = localGetHeaderIndex_(H, ['製品ID','ProductId','product_id']);
+      const partCol = localGetHeaderIndex_(H, ['部品ID','PartId','part_id']);
+      const nameCol = localGetHeaderIndex_(H, ['部品名','Name','name']);
+      const imgCol  = localGetHeaderIndex_(H, ['画像URL','Image','image','img']);
+      const qtyCol  = localGetHeaderIndex_(H, ['必要数','Qty','quantity']);
+      const list = pv.slice(1).filter(function(x){ return prodCol>=0 ? String(x[prodCol]) === (modelId||id) : true; });
+      const hit  = list.find(function(x){ return partCol>=0 ? String(x[partCol])===partId : false; }) || list[0];
+      if (hit){
+        partName = nameCol>=0? String(hit[nameCol]||''):'';
+        qty      = qtyCol>=0?  String(hit[qtyCol]||''):'';
+        img      = imgCol>=0?  String(hit[imgCol]||''):'';
+      }
+    }
+  }
+  return { id:id, name:name, partId:partId, partName:partName, qty:qty, img:img };
 }
