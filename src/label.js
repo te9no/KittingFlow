@@ -1,6 +1,6 @@
 function getManageSheet_(){
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const names = ['製品管理','管理','Manage','Products'];
+  const names = ['Products'];
   for (var i=0;i<names.length;i++){ var sh = ss.getSheetByName(names[i]); if (sh) return sh; }
   return null;
 }
