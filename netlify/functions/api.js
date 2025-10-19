@@ -1,7 +1,7 @@
 // Minimal Netlify Function to proxy requests to Apps Script Web App
 // Set env var GAS_ENDPOINT to your deployed Web App URL (ending with /exec)
 
-const fetch = global.fetch || ((...args) => import('node-fetch').then(({default: f}) => f(...args)));
+const fetch = global.fetch || ((...args) => import('node-fetch').then(({ default: f }) => f(...args)));
 
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
@@ -30,23 +30,20 @@ exports.handler = async (event) => {
       }
     } else {
       const text = await res.text();
-      try {
-        payload = JSON.parse(text);
-      } catch {
-        // JSONでない場合はテキストを error/data に反映
-        payload = res.ok ? { ok: true, data: text } : { ok: false, error: text };
-      }
+      // Treat any non-JSON response as error; include a small preview for debugging
+      const looksHtml = /<!doctype html|<html/i.test(text) || ct.includes('text/html');
+      payload = { ok: false, error: looksHtml ? 'html-from-gas' : 'non-json-from-gas', detail: text.slice(0, 4000) };
     }
     if (typeof payload.ok === 'undefined') payload.ok = res.ok;
-    // 常に200で返し、フロントは ok/stauts を見て処理（CORSやブラウザ差異を避ける）
+    // Always return 200; front checks ok/status to handle errors uniformly
     return { statusCode: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders() }, body: JSON.stringify({ status: res.status, ...payload }) };
   } catch (err) {
-    // ここも200で返す（デバッグしやすいようにメッセージを含める）
+    // Return 200 with error payload to ease CORS/debug handling
     return json({ ok: false, error: String(err) });
   }
 };
 
-function corsHeaders(){
+function corsHeaders() {
   const allow = process.env.ALLOW_ORIGIN || '*';
   return {
     'Access-Control-Allow-Origin': allow,
@@ -54,6 +51,6 @@ function corsHeaders(){
     'Access-Control-Allow-Methods': 'POST, GET, OPTIONS'
   };
 }
-function json(obj, status=200){
+function json(obj, status = 200) {
   return { statusCode: status, headers: { 'Content-Type': 'application/json', ...corsHeaders() }, body: JSON.stringify(obj) };
 }
