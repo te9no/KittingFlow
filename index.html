@@ -45,7 +45,7 @@
 
   <p class="muted">バックエンド: Netlify Functions 経由で GAS /exec</p>
 
-  <div class="card muted" id="debugCard" style="display:none">
+  <div class="card muted" id="debugCard">
     <div><b>Debug Log</b></div>
     <pre id="debugLog"></pre>
   </div>
@@ -73,7 +73,7 @@
     function setView(d){
       qs('view').style.display = 'block';
       qs('v-id').textContent = d.id || '';
-      qs('v-name').textContent = d.name || '';
+      qs('v-name').textContent = d.name || '-';
       const partLine = (d.partId||'') + (d.partName?(' / '+d.partName):'') + (d.qty?(' / 必要数 '+d.qty):'');
       qs('v-part').textContent = partLine || '-';
       const img = qs('v-img');

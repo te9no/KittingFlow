@@ -16,27 +16,27 @@ const STATUS = {
 };
 
 const HEADER_KEYS = {
-  fancyId: ['FancyID', 'ProductID', '製品ID', 'Fancy Id'],
-  productName: ['ProductName', '製品名', 'Name'],
+  fancyId: ['FancyID', 'ProductID', '製品ID', 'Fancy Id', 'fancy_id', '製品コード'],
+  productName: ['ProductName', '製品名', '品名', 'Name', '商品名'],
   status: ['Status', '状態'],
-  recipeId: ['RecipeID', 'レシピID', 'ModelID'],
+  recipeId: ['RecipeID', 'レシピID', 'ModelID', 'モデルID'],
   progPartId: ['ProgPartID', 'ProgressPartID', 'CurrentPartID', '進行中部品ID'],
   lastUpdate: ['LastUpdate', '最終更新', '更新日時'],
 
-  recipeProductId: ['ProductID', 'FancyID', '製品ID', 'ModelID'],
-  recipePartId: ['PartID', '部品ID', 'パーツID'],
+  recipeProductId: ['ProductID', 'FancyID', '製品ID', 'ModelID', 'モデルID', '製品コード'],
+  recipePartId: ['PartID', '部品ID', 'パーツID', '構成部品ID'],
 
-  partsProductId: ['ProductID', 'FancyID', '製品ID', 'ModelID'],
-  partsPartId: ['PartID', '部品ID', 'パーツID'],
-  partsName: ['PartName', '部品名', '名称'],
-  partsQty: ['Qty', 'Quantity', '数量', '必要数', '個数'],
-  partsImg: ['ImageURL', 'Image', '画像URL']
+  partsProductId: ['ProductID', 'FancyID', '製品ID', 'ModelID', 'モデルID', '製品コード'],
+  partsPartId: ['PartID', '部品ID', 'パーツID', '部品コード'],
+  partsName: ['PartName', '部品名', '品名', '名称', '部品名称'],
+  partsQty: ['Qty', 'Quantity', '数量', '必要数', '個数', '必要数量', '必要個数'],
+  partsImg: ['ImageURL', 'Image', '画像URL', 'Image Link', '画像リンク']
 };
 
 const SHEET_NAMES = {
-  products: ['Products', '製品管理'],
-  recipe: ['Recipe', 'レシピ'],
-  parts: ['Parts', '部品表', 'パーツ'],
+  products: ['Products', '製品管理', '製品一覧', '製品マスタ'],
+  recipe: ['Recipe', 'レシピ', '構成表', 'BOM'],
+  parts: ['Parts', '部品表', 'パーツ', '部品一覧', '部品マスタ'],
   progress: ['Progress', '進捗'],
   logs: ['Logs', 'ログ']
 };
@@ -110,7 +110,8 @@ function requireFancyId_(id) {
 function handleList_(ctx) {
   const products = loadProducts_();
   const items = products.entries.map(function (entry) {
-    return { id: entry.id, name: entry.name };
+    const displayName = entry.name || lookupProductName_(entry.recipeId, entry.id);
+    return { id: entry.id, name: displayName };
   });
   ctx.log('INFO', 'list:success', { count: items.length });
   return items;
@@ -284,11 +285,14 @@ function handleResume_(ctx, fancyId) {
  */
 function buildSnapshot_(ctx, fancyId, recipeId, partId, product) {
   product = product || (loadProducts_().map[fancyId] || null);
-  const partDetails = getPartDetails_(recipeId, partId);
+  const productName = (product && product.name) || lookupProductName_(recipeId, fancyId);
+  const effectivePartId = partId || (product && product.progPartId) || '';
+  const partDetails = getPartDetails_(recipeId, effectivePartId);
+  if (!partDetails.id && effectivePartId) partDetails.id = cleanString_(effectivePartId);
   const snap = {
     id: fancyId,
-    name: product ? product.name : '',
-    partId: partDetails.id || (partId || ''),
+    name: productName,
+    partId: partDetails.id || cleanString_(effectivePartId),
     partName: partDetails.name || '',
     qty: partDetails.qty || '',
     img: partDetails.img || ''
@@ -482,6 +486,42 @@ function collectPartSequence_(ctx, recipeId) {
     ctx.log('WARN', 'parts:notFound', { recipeId: cleanId });
   }
   return list;
+}
+
+function lookupProductName_(recipeId, fancyId) {
+  const products = loadProducts_();
+  const byFancy = products.map[fancyId];
+  if (byFancy && byFancy.name) return byFancy.name;
+
+  if (recipeId) {
+    const byRecipe = products.entries.find(function (entry) {
+      return entry.recipeId && idsEqual_(entry.recipeId, recipeId);
+    });
+    if (byRecipe && byRecipe.name) return byRecipe.name;
+  }
+
+  const recipeSheet = getSheet_(SHEET_NAMES.recipe);
+  if (recipeSheet) {
+    const values = recipeSheet.getDataRange().getValues();
+    if (values.length > 1) {
+      const header = values[0];
+      const idxProduct = getHeaderIndex_(header, HEADER_KEYS.recipeProductId);
+      const idxName = getHeaderIndex_(header, HEADER_KEYS.productName);
+      if (idxName >= 0) {
+        const key = recipeId || fancyId;
+        const row = values.slice(1).find(function (record) {
+          if (idxProduct >= 0 && key) return idsEqual_(record[idxProduct], key);
+          return false;
+        }) || values[1];
+        if (row) {
+          const name = cleanString_(row[idxName]);
+          if (name) return name;
+        }
+      }
+    }
+  }
+
+  return '';
 }
 
 /**
