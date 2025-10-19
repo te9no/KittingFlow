@@ -1,15 +1,14 @@
-/* ----------------------------------------------------
- * 🧩 KittingFlow Backend (GAS Secure + GUI Settings)
- * ---------------------------------------------------- */
+/**
+ * KittingFlow Backend (Google Apps Script)
+ */
 
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu("⚙️ KittingFlowSettings")
-    .addItem("Settingsを開く", "openSettingsSidebar")
+  ui.createMenu("KittingFlow Settings")
+    .addItem("Open Settings", "openSettingsSidebar")
     .addToUi();
 }
 
-/* ===== Settings GUI ===== */
 function openSettingsSidebar() {
   const html = HtmlService.createHtmlOutputFromFile("SettingsSidebar")
     .setTitle("KittingFlow Settings");
@@ -18,41 +17,84 @@ function openSettingsSidebar() {
 
 function getSettings() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Settings");
-  if (!sheet) throw new Error("Settingsシートが見つかりません。作成してください。");
-  const data = sheet.getDataRange().getValues();
+  if (!sheet) {
+    throw new Error("Settings sheet not found. Please create a sheet named 'Settings'.");
+  }
+  const rows = sheet.getDataRange().getValues();
   const settings = {};
-  data.forEach(r => { if (r[0]) settings[r[0]] = r[1]; });
+  rows.forEach(row => {
+    if (row[0]) {
+      settings[row[0]] = row[1];
+    }
+  });
   return settings;
 }
 
 function saveSettings(obj) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Settings");
-  if (!sheet) throw new Error("Settingsシートが見つかりません。");
-  const data = sheet.getDataRange().getValues();
-  const keys = data.map(r => r[0]);
+  if (!sheet) {
+    throw new Error("Settings sheet not found. Please create a sheet named 'Settings'.");
+  }
+  const rows = sheet.getDataRange().getValues();
+  const keys = rows.map(row => row[0]);
   Object.keys(obj).forEach(key => {
-    const i = keys.indexOf(key);
-    if (i >= 0) sheet.getRange(i+1, 2).setValue(obj[key]);
-    else sheet.appendRow([key, obj[key]]);
+    const idx = keys.indexOf(key);
+    if (idx >= 0) {
+      sheet.getRange(idx + 1, 2).setValue(obj[key]);
+    } else {
+      sheet.appendRow([key, obj[key]]);
+    }
   });
 }
 
-/* ===== CORS helper ===== */
-function _txt(str) {
-  return ContentService.createTextOutput(str)
-    .setMimeType(ContentService.MimeType.TEXT)
-    .setHeaders({ "Access-Control-Allow-Origin": "*" });
+function _respond(body, mimeType) {
+  const output = ContentService.createTextOutput(body);
+  output.setMimeType(mimeType);
+  output.setHeader("Access-Control-Allow-Origin", "*");
+  output.setHeader("Access-Control-Allow-Methods", "GET, POST");
+  output.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  return output;
 }
-function _json(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON)
-    .setHeaders({ "Access-Control-Allow-Origin": "*" });
-}
-function doOptions(e){ return _txt(""); }
 
-/* ===== Auth + API ===== */
+function _txt(body) {
+  return _respond(body, ContentService.MimeType.TEXT);
+}
+
+function _json(obj) {
+  return _respond(JSON.stringify(obj), ContentService.MimeType.JSON);
+}
+
+function doOptions() {
+  return _txt("");
+}
+
+function _parsePayload(e) {
+  if (!e || !e.postData) return {};
+  const { type, contents } = e.postData;
+  if (type === "application/json") {
+    try {
+      return JSON.parse(contents || "{}");
+    } catch (err) {
+      return {};
+    }
+  }
+  if (type === "application/x-www-form-urlencoded") {
+    const params = e.parameter || {};
+    const payload = {};
+    Object.keys(params).forEach(key => {
+      payload[key] = params[key];
+    });
+    return payload;
+  }
+  try {
+    return contents ? JSON.parse(contents) : {};
+  } catch (err) {
+    return {};
+  }
+}
+
 function doPost(e) {
-  const payload = JSON.parse(e.postData.contents || "{}");
+  const payload = _parsePayload(e);
   const action = payload.action;
 
   if (action === "resume" && payload.id_token) {
@@ -61,21 +103,25 @@ function doPost(e) {
     const info = JSON.parse(res.getContentText());
 
     const settings = getSettings();
-    const allowed = (settings.ALLOWED_USERS || "").split(",").map(s => s.trim()).filter(Boolean);
-    if (!allowed.includes(info.email)) return _txt("🚫 Unauthorized user");
+    const allowed = (settings.ALLOWED_USERS || "")
+      .split(",")
+      .map(s => s.trim())
+      .filter(Boolean);
+    if (!allowed.includes(info.email)) {
+      return _txt("Unauthorized user");
+    }
 
-    return _txt("✅ 認証成功: " + info.email);
+    return _txt("認証成功: " + info.email);
   }
 
-  if (action === "next") {
-    const id = payload.partId;
+  if (action === "next" && payload.partId) {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Progress");
-    sheet.getRange("B2").setValue(id);
-    sheet.getRange("A2").setValue("🟢進行中");
-    return _txt("➡️ 次の部品に進みました: " + id);
+    sheet.getRange("B2").setValue(payload.partId);
+    sheet.getRange("A2").setValue("進行中");
+    return _txt("次の部品に進みました: " + payload.partId);
   }
 
-  return _txt("❌ invalid request");
+  return _txt("invalid request");
 }
 
 function doGet(e) {
@@ -90,6 +136,7 @@ function doGet(e) {
   if (action === "settings") {
     return _json(getSettings());
   }
+
   return HtmlService.createHtmlOutput("<h3>KittingFlow API</h3>");
 }
 
@@ -97,12 +144,23 @@ function sendSheet(name) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
   const data = sheet.getDataRange().getValues();
   const header = data.shift();
-  const rows = data.map(r => Object.fromEntries(header.map((h,i)=>[h, r[i]])));
+  const rows = data.map(row => {
+    const record = {};
+    header.forEach((key, idx) => {
+      record[key] = row[idx];
+    });
+    return record;
+  });
   return _json(rows);
 }
 
 function sendProgress() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Progress");
-  const [state, part, product] = sheet.getRange("A2:C2").getValues()[0];
-  return _json({ 状態: state, 現在の部品ID: part, 製品ID: product });
+  const values = sheet.getRange("A2:C2").getValues()[0];
+  const [state, partId, productId] = values;
+  return _json({
+    状態: state,
+    現在の部品ID: partId,
+    製品ID: productId
+  });
 }

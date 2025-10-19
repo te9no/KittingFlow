@@ -2,11 +2,20 @@
 // 例: VITE_GAS_URL = https://script.google.com/macros/s/XXXXXX/exec
 const GAS_URL = import.meta.env.VITE_GAS_URL;
 
+function buildFormBody(values) {
+  const params = new URLSearchParams();
+  Object.entries(values).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      params.append(key, value);
+    }
+  });
+  return params;
+}
+
 export async function verifyAndResume(idToken) {
   const res = await fetch(GAS_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "resume", id_token: idToken })
+    body: buildFormBody({ action: "resume", id_token: idToken })
   });
   const text = await res.text();
   if (!res.ok) {
@@ -28,8 +37,11 @@ export async function getProgress() {
 export async function updateProgress(nextPartId) {
   const res = await fetch(GAS_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "next", partId: nextPartId })
+    body: buildFormBody({ action: "next", partId: nextPartId })
   });
-  return await res.text();
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(text || "Failed to advance to next part");
+  }
+  return text;
 }
