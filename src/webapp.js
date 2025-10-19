@@ -12,20 +12,41 @@ function doGet(e){
 }
 
 function doPost(e){
-  Logger.log(JSON.stringify(data)); Logger.log('action=' + action);
   try{
-    Logger.log(e && e.postData && e.postData.contents);
+    const raw = (e && e.postData && e.postData.contents) || '{}';
+    let data = {};
+    try { data = JSON.parse(raw); } catch (err) { data = {}; }
+    const action = String((data.action || '')).toLowerCase();
+    Logger.log('raw=' + raw);
     Logger.log('parsed=' + JSON.stringify(data));
     Logger.log('action=' + action);
-    const data = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     // shared token check (optional). Set Script Properties: API_TOKEN
     const expected = PropertiesService.getScriptProperties().getProperty('API_TOKEN');
     if (expected && String(data.token || '') !== String(expected)) {
       return ContentService.createTextOutput(JSON.stringify({ ok:false, error:'forbidden' }))
         .setMimeType(ContentService.MimeType.JSON);
     }
-    const action = String(data.action || '').toLowerCase();
-    if (action === 'snapshot'){
+
+    // list: 製品一覧を返す
+    if (action === 'list'){
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      // 管理シート名の候補
+      const candidates = ['製品管理','管理','Manage','Products'];
+      let manage = null;
+      for (var i=0;i<candidates.length;i++){ manage = ss.getSheetByName(candidates[i]); if(manage) break; }
+      const rows = manage ? manage.getDataRange().getValues() : [];
+      // 先頭行をヘッダとみなす
+      let items = [];
+      if (rows.length>0){
+        const H = (rows[0]||[]).map(String);
+        const idIdx = localGetHeaderIndex_(H, ['製品ID','ProductId','product_id','ID','Id']);
+        const nameIdx = localGetHeaderIndex_(H, ['製品名','Name','name']);
+        items = rows.slice(1).map(function(r){ return { id: String(idIdx>=0? r[idIdx]: r[0]||''), name: String(nameIdx>=0? r[nameIdx]: r[1]||'') }; }).filter(function(x){ return x.id; });
+      }
+      return ContentService.createTextOutput(JSON.stringify({ ok:true, data: items }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  if (action === 'snapshot'){
       const snap = getPickingSnapshot_(data.id);
       return ContentService.createTextOutput(JSON.stringify({ ok:true, data:snap }))
         .setMimeType(ContentService.MimeType.JSON);
@@ -218,6 +239,7 @@ function renderMissingId_(next){
   h += '</body></html>';
   return h;
 }
+/*
 // Mobile Web App (menu, start, pick, label, resume)
 
 function doGet(e){
@@ -423,9 +445,11 @@ function getPickingSnapshot_(id){
   return { id, name, partId, partName, qty, img };
 }
 function nextPartAndGetSnapshot(id){ if (typeof nextPart === 'function') nextPart(); return getPickingSnapshot_(id); }
+*/
 
 
 
+/*
 // ----- Snapshot helpers (avoid navigation) -----
 function getPickingSnapshot_(id){
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -448,6 +472,36 @@ function getPickingSnapshot_(id){
       const qtyCol  = H.indexOf('必要数');
       const list = pv.slice(1).filter(x => String(x[prodCol]) === (modelId||id));
       const hit  = list.find(x => String(x[partCol])===partId) || list[0];
+      if (hit){ partName = nameCol>=0? String(hit[nameCol]||''):''; qty = qtyCol>=0? String(hit[qtyCol]||''):''; img = imgCol>=0? String(hit[imgCol]||''):''; }
+    }
+  }
+  return { id:id, name:name, partId:partId, partName:partName, qty:qty, img:img };
+}
+function nextPartAndGetSnapshot(id){ if (typeof nextPart === 'function') nextPart(); return getPickingSnapshot_(id); }
+*/
+
+// ===== Active snapshot helpers =====
+function getPickingSnapshot_(id){
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const manage = ss.getSheetByName('製品管理');
+  const rows = manage ? manage.getDataRange().getValues() : [];
+  var name=''; var r = rows.find(function(x){ return String(x[0])===String(id); }); if (r) name = String(r[1]||'');
+  const prog = ss.getSheetByName('ピッキング進行');
+  const partId = prog ? String(prog.getRange('B2').getValue()||'') : '';
+  const modelId = prog ? String(prog.getRange('D2').getValue()||'') : '';
+  const parts = ss.getSheetByName('部品リスト');
+  var partName='', qty='', img='';
+  if (parts){
+    const pv = parts.getDataRange().getValues();
+    if (pv.length>1){
+      const H = pv[0].map(String);
+      const prodCol = H.indexOf('製品ID');
+      const partCol = H.indexOf('部品ID');
+      const nameCol = H.indexOf('部品名');
+      const imgCol  = H.indexOf('画像URL');
+      const qtyCol  = H.indexOf('必要数');
+      const list = pv.slice(1).filter(function(x){ return String(x[prodCol]) === (modelId||id); });
+      const hit  = list.find(function(x){ return String(x[partCol])===partId; }) || list[0];
       if (hit){ partName = nameCol>=0? String(hit[nameCol]||''):''; qty = qtyCol>=0? String(hit[qtyCol]||''):''; img = imgCol>=0? String(hit[imgCol]||''):''; }
     }
   }

@@ -21,7 +21,12 @@
 <body>
   <h1>KittingFlow</h1>
   <div class="row">
-    <input id="pid" placeholder="製品ID (例: MK-...)" />
+    <select id="pidSel" disabled>
+      <option>読み込み中...</option>
+    </select>
+    <button id="reload">再読込</button>
+  </div>
+  <div class="row">
     <button id="start">開始</button>
     <button id="snapshot">現在の状態</button>
   </div>
@@ -48,6 +53,10 @@
       if(!res.ok || !data.ok){ throw new Error(data.error || 'request failed'); }
       return data;
     };
+    function getId(){
+      const sel = document.getElementById('pidSel');
+      return sel && sel.value ? sel.value.trim() : '';
+    }
     function qs(id){ return document.getElementById(id); }
     function setView(d){
       qs('view').style.display = 'block';
@@ -59,33 +68,60 @@
       if(d.img){ img.src = d.img; img.style.display = 'block'; } else { img.removeAttribute('src'); img.style.display='none'; }
     }
     async function doStart(){
-      const id = qs('pid').value.trim(); if(!id){ alert('製品IDを入力してください'); return; }
+      const id = getId(); if(!id){ alert('製品IDを選択してください'); return; }
       try{ const {data} = await api({action:'start', id}); setView(data); }
       catch(e){ alert('エラー: '+e.message); }
     }
     async function doSnapshot(){
-      const id = qs('pid').value.trim(); if(!id){ alert('製品IDを入力してください'); return; }
+      const id = getId(); if(!id){ alert('製品IDを選択してください'); return; }
       try{ const {data} = await api({action:'snapshot', id}); setView(data); }
       catch(e){ alert('エラー: '+e.message); }
     }
     async function doNext(){
-      const id = qs('pid').value.trim(); if(!id){ alert('製品IDを入力してください'); return; }
+      const id = getId(); if(!id){ alert('製品IDを選択してください'); return; }
       try{ const {data} = await api({action:'next', id}); setView(data); }
       catch(e){ alert('エラー: '+e.message); }
     }
     async function doPause(){
-      const id = qs('pid').value.trim(); if(!id){ alert('製品IDを入力してください'); return; }
+      const id = getId(); if(!id){ alert('製品IDを選択してください'); return; }
       try{ await api({action:'pause', id}); alert('中断しました'); }
       catch(e){ alert('エラー: '+e.message); }
+    }
+    async function loadList(){
+      try{
+        const {data} = await api({action:'list'});
+        const sel = qs('pidSel');
+        sel.innerHTML = '';
+        if(!Array.isArray(data) || data.length===0){
+          const op = document.createElement('option'); op.textContent='製品がありません'; op.value=''; sel.appendChild(op); sel.disabled=true; return;
+        }
+        data.forEach((x)=>{
+          const op = document.createElement('option');
+          op.value = x.id; op.textContent = x.id + (x.name? (' / '+x.name):''); sel.appendChild(op);
+        });
+        sel.disabled = false;
+      }catch(e){
+        alert('エラー: '+e.message);
+      }
     }
     qs('start').onclick = doStart;
     qs('snapshot').onclick = doSnapshot;
     qs('next').onclick = doNext;
     qs('pause').onclick = doPause;
+    qs('reload').onclick = loadList;
     // idクエリがあれば自動表示
     const m = location.search.match(/id=([^&]+)/);
-    if(m){ qs('pid').value = decodeURIComponent(m[1]); doSnapshot(); }
+    if(m){
+      // クエリ優先: セレクトに存在すれば選択して表示、なければリスト後に表示
+      const desired = decodeURIComponent(m[1]);
+      loadList().then(()=>{
+        const sel = qs('pidSel');
+        const opt = Array.from(sel.options).find(o=>o.value===desired);
+        if(opt){ sel.value = desired; doSnapshot(); }
+      });
+    }else{
+      loadList();
+    }
   </script>
 </body>
 </html>
-
