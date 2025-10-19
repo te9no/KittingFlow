@@ -8,7 +8,11 @@ export async function verifyAndResume(idToken) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action: "resume", id_token: idToken })
   });
-  return await res.text();
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(text || "Verification failed");
+  }
+  return text;
 }
 
 export async function getParts() {

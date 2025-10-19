@@ -11,12 +11,12 @@ export default function App() {
     try {
       const result = await verifyAndResume(idToken);
       setMessage(result);
-      if (result && !result.toLowerCase().includes("error")) {
+      if (result && result.includes("認証成功")) {
         setUserVerified(true);
       }
     } catch (err) {
       console.error(err);
-      setMessage("Login failed. Please try again.");
+      setMessage(err.message || "Login failed. Please try again.");
     }
   }
 
