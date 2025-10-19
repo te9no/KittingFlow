@@ -110,7 +110,7 @@ function requireFancyId_(id) {
 function handleList_(ctx) {
   const products = loadProducts_();
   const items = products.entries.map(function (entry) {
-    const displayName = entry.name || lookupProductName_(entry.recipeId, entry.id);
+    const displayName = entry.name || lookupProductName_(entry.recipeId, entry.id) || entry.id;
     return { id: entry.id, name: displayName };
   });
   ctx.log('INFO', 'list:success', { count: items.length });
@@ -285,7 +285,7 @@ function handleResume_(ctx, fancyId) {
  */
 function buildSnapshot_(ctx, fancyId, recipeId, partId, product) {
   product = product || (loadProducts_().map[fancyId] || null);
-  const productName = (product && product.name) || lookupProductName_(recipeId, fancyId);
+  const productName = (product && product.name) || lookupProductName_(recipeId, fancyId) || fancyId;
   const effectivePartId = partId || (product && product.progPartId) || '';
   const partDetails = getPartDetails_(recipeId, effectivePartId);
   if (!partDetails.id && effectivePartId) partDetails.id = cleanString_(effectivePartId);
@@ -338,6 +338,7 @@ function readProgressState_() {
   }
   const values = sheet.getRange(2, 1, 1, 5).getValues();
   const row = values && values.length ? values[0] : [];
+  console.log('readProgressState_', row);
   return {
     status: String(row[0] || ''),
     partId: String(row[1] || '').trim(),
@@ -560,10 +561,14 @@ function getPartDetails_(recipeId, partId) {
     return { id: cleanString_(partId), name: '', qty: '', img: '' };
   }
 
+  const fallbackId = cleanString_(target[0]);
+  const fallbackName = String(target[1] || '');
+  const fallbackQty = String(target[2] || '');
+
   return {
-    id: idxPart >= 0 ? cleanString_(target[idxPart]) : cleanString_(partId),
-    name: idxName >= 0 ? String(target[idxName] || '') : '',
-    qty: idxQty >= 0 ? String(target[idxQty] || '') : '',
+    id: idxPart >= 0 ? cleanString_(target[idxPart]) : (fallbackId || cleanString_(partId)),
+    name: idxName >= 0 ? String(target[idxName] || '') : fallbackName,
+    qty: idxQty >= 0 ? String(target[idxQty] || '') : fallbackQty,
     img: idxImg >= 0 ? String(target[idxImg] || '') : ''
   };
 }
