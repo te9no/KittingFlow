@@ -1,772 +1,681 @@
-﻿// Mobile Web App (menu, start, pick, label, resume)
+/**
+ * KittingFlow Apps Script backend.
+ * Provides a JSON API (list/start/snapshot/next/pause/resume) consumed via Netlify.
+ *
+ * The implementation expects the following Google Sheets:
+ *  - Products: tracks FancyID / ProductName / Status / RecipeID / ProgPartID / LastUpdate
+ *  - Recipe:   maps ProductID => ordered PartID list
+ *  - Parts:    provides details for each PartID (name, qty, image, etc.)
+ *  - Progress: single-row state (Status, PartID, FancyID, RecipeID, LastUpdate)
+ */
 
-function doGet(e){
-  const p = (e && e.parameter) || {};
-  const page = String(p.page || '').toLowerCase();
-  try{ logInfo_('doGet', { page: page, id: p.id }); }catch(_){ }
-  if (!page || page === 'menu') return HtmlService.createHtmlOutput(renderMenu_());
-  if (page === 'start') return HtmlService.createHtmlOutput(renderStart_());
-  if (page === 'pick')  return HtmlService.createHtmlOutput(p.id ? renderPick_(p.id) : renderMissingId_('pick'));
-  if (page === 'label') return HtmlService.createHtmlOutput(p.id ? renderLabel_(p.id, p.size, p.margin, p.name) : renderMissingId_('label'));
-  if (typeof p.id !== 'undefined') return HtmlService.createHtmlOutput(p.id ? renderResume_(p.id) : renderMissingId_('resume'));
-  return HtmlService.createHtmlOutput(renderMenu_());
-}
+const STATUS = {
+  PICKING: 'PICKING',
+  PAUSED: 'PAUSED',
+  COMPLETED: 'COMPLETED'
+};
 
-function doPost(e){
-  try{
-    const raw = (e && e.postData && e.postData.contents) || '{}';
-    let data = {};
-    try { data = JSON.parse(raw); } catch (err) { data = {}; }
-    const action = String((data.action || '')).toLowerCase();
-    Logger.log('raw=' + raw);
-    Logger.log('parsed=' + JSON.stringify(data));
-    Logger.log('action=' + action);
-    try{ logInfo_('doPost:recv', { action: action, hasToken: !!data.token, id: data.id, rawLen: raw.length }); }catch(_){ }
-    // shared token check (optional). Set Script Properties: API_TOKEN
-    const sp = PropertiesService.getScriptProperties();
-    const expected = sp.getProperty('API_TOKEN');
-    const debugResp = (String(sp.getProperty('DEBUG_RESPONSE')||'').toLowerCase()==='true') || (data && (data.debug===true || data.debug===1 || String(data.debug||'').toLowerCase()==='true'));
-    if (expected && String(data.token || '') !== String(expected)) {
-      return jsonResponse_({ ok:false, error:'forbidden' }, debugResp);
+const HEADER_KEYS = {
+  fancyId: ['FancyID', 'ProductID', '製品ID', 'Fancy Id'],
+  productName: ['ProductName', '製品名', 'Name'],
+  status: ['Status', '状態'],
+  recipeId: ['RecipeID', 'レシピID', 'ModelID'],
+  progPartId: ['ProgPartID', 'ProgressPartID', 'CurrentPartID', '進行中部品ID'],
+  lastUpdate: ['LastUpdate', '最終更新', '更新日時'],
+
+  recipeProductId: ['ProductID', 'FancyID', '製品ID', 'ModelID'],
+  recipePartId: ['PartID', '部品ID', 'パーツID'],
+
+  partsProductId: ['ProductID', 'FancyID', '製品ID', 'ModelID'],
+  partsPartId: ['PartID', '部品ID', 'パーツID'],
+  partsName: ['PartName', '部品名', '名称'],
+  partsQty: ['Qty', 'Quantity', '数量', '必要数', '個数'],
+  partsImg: ['ImageURL', 'Image', '画像URL']
+};
+
+const SHEET_NAMES = {
+  products: ['Products', '製品管理'],
+  recipe: ['Recipe', 'レシピ'],
+  parts: ['Parts', '部品表', 'パーツ'],
+  progress: ['Progress', '進捗'],
+  logs: ['Logs', 'ログ']
+};
+
+/**
+ * Entry point for Netlify -> GAS JSON proxy.
+ */
+function doPost(e) {
+  const ctx = createContext_(e);
+  try {
+    const token = ctx.sp.getProperty('API_TOKEN');
+    if (token && String(ctx.request.token || '') !== String(token)) {
+      ctx.log('WARN', 'auth:forbidden', { hasToken: !!ctx.request.token });
+      return jsonResponse_(ctx, { ok: false, error: 'forbidden' });
     }
 
-    // フェイルセーフ: action未指定なら一覧を返す
-    if (!action) {
-      const items = (function(){
-        const ss = SpreadsheetApp.getActiveSpreadsheet();
-        const candidates = ['Products'];
-        let manage = null;
-        for (var i=0;i<candidates.length;i++){ manage = ss.getSheetByName(candidates[i]); if(manage) break; }
-        const rows = manage ? manage.getDataRange().getValues() : [];
-        let items = [];
-        if (rows.length>0){
-          const H = (rows[0]||[]).map(String);
-          const idIdx = localGetHeaderIndex_(H, ['ProductID']);
-          const nameIdx = localGetHeaderIndex_(H, ['ProductName']);
-          items = rows.slice(1).map(function(r){ return { id: String(idIdx>=0? r[idIdx]: r[0]||''), name: String(nameIdx>=0? r[nameIdx]: r[1]||'') }; }).filter(function(x){ return x.id; });
+    const action = ctx.action;
+    const fancyId = String(ctx.request.id || '').trim();
+
+    switch (action) {
+      case '':
+      case 'list': {
+        const items = handleList_(ctx);
+        return jsonResponse_(ctx, { ok: true, data: items });
+      }
+      case 'start': {
+        requireFancyId_(fancyId);
+        const data = handleStart_(ctx, fancyId);
+        return jsonResponse_(ctx, { ok: true, data: data });
+      }
+      case 'snapshot': {
+        requireFancyId_(fancyId);
+        const data = handleSnapshot_(ctx, fancyId);
+        return jsonResponse_(ctx, { ok: true, data: data });
+      }
+      case 'next': {
+        requireFancyId_(fancyId);
+        const data = handleNext_(ctx, fancyId);
+        return jsonResponse_(ctx, { ok: true, data: data });
+      }
+      case 'pause': {
+        requireFancyId_(fancyId);
+        handlePause_(ctx, fancyId);
+        return jsonResponse_(ctx, { ok: true });
+      }
+      case 'resume': {
+        requireFancyId_(fancyId);
+        const data = handleResume_(ctx, fancyId);
+        return jsonResponse_(ctx, { ok: true, data: data });
+      }
+      default:
+        ctx.log('WARN', 'action:unknown', { action: action });
+        return jsonResponse_(ctx, { ok: false, error: 'unknown-action' });
+    }
+  } catch (err) {
+    ctx.log('ERROR', 'doPost:error', { message: err && err.message, stack: String(err && err.stack || '') });
+    return jsonResponse_(ctx, { ok: false, error: err && err.message ? err.message : String(err || 'error') });
+  }
+}
+
+/**
+ * Helper to throw when FancyID is required.
+ */
+function requireFancyId_(id) {
+  if (!id) throw new Error('missing-id');
+}
+
+/**
+ * list: return FancyID/ProductName pairs.
+ */
+function handleList_(ctx) {
+  const products = loadProducts_();
+  const items = products.entries.map(function (entry) {
+    return { id: entry.id, name: entry.name };
+  });
+  ctx.log('INFO', 'list:success', { count: items.length });
+  return items;
+}
+
+/**
+ * start: register picking progress and return first snapshot.
+ */
+function handleStart_(ctx, fancyId) {
+  const products = loadProducts_();
+  const product = products.map[fancyId] || null;
+  const recipeId = product && product.recipeId ? product.recipeId : fancyId;
+  const sequence = collectPartSequence_(ctx, recipeId);
+  const firstPart = sequence.length ? sequence[0] : '';
+
+  const timestamp = setProgressState_({
+    status: STATUS.PICKING,
+    fancyId: fancyId,
+    recipeId: recipeId,
+    partId: firstPart
+  });
+
+  if (product) {
+    updateProductState_(products, product, {
+      status: STATUS.PICKING,
+      partId: firstPart,
+      lastUpdate: timestamp
+    });
+  }
+
+  ctx.log('INFO', 'start:updated', {
+    id: fancyId,
+    recipeId: recipeId,
+    partId: firstPart,
+    partCount: sequence.length
+  });
+
+  return buildSnapshot_(ctx, fancyId, recipeId, firstPart, product);
+}
+
+/**
+ * snapshot: return current picking state.
+ */
+function handleSnapshot_(ctx, fancyId) {
+  const progress = readProgressState_();
+  const products = loadProducts_();
+  const product = products.map[fancyId] || null;
+  let recipeId = progress.recipeId || (product && product.recipeId) || fancyId;
+  let partId = progress.partId;
+
+  if (!partId) {
+    const sequence = collectPartSequence_(ctx, recipeId);
+    partId = sequence.length ? sequence[0] : '';
+  }
+
+  const snap = buildSnapshot_(ctx, fancyId, recipeId, partId, product);
+  ctx.log('INFO', 'snapshot:success', {
+    id: fancyId,
+    recipeId: recipeId,
+    partId: snap.partId,
+    hasImage: !!snap.img
+  });
+  return snap;
+}
+
+/**
+ * next: advance to the next part in the recipe.
+ */
+function handleNext_(ctx, fancyId) {
+  const progress = readProgressState_();
+  const products = loadProducts_();
+  const product = products.map[fancyId] || null;
+  const recipeId = progress.recipeId || (product && product.recipeId) || fancyId;
+  const sequence = collectPartSequence_(ctx, recipeId);
+
+  const currentId = progress.partId;
+  const currentIdx = currentId ? sequence.findIndex(function (id) { return idsEqual_(id, currentId); }) : -1;
+  const nextIdx = currentIdx >= 0 ? currentIdx + 1 : 0;
+
+  var nextId = '';
+  var status = STATUS.COMPLETED;
+  if (sequence.length) {
+    if (nextIdx < sequence.length) {
+      nextId = sequence[nextIdx];
+      status = STATUS.PICKING;
+    }
+  }
+
+  const timestamp = setProgressState_({
+    status: status,
+    fancyId: fancyId,
+    recipeId: recipeId,
+    partId: nextId
+  });
+
+  if (product) {
+    updateProductState_(products, product, {
+      status: status,
+      partId: nextId,
+      lastUpdate: timestamp
+    });
+  }
+
+  ctx.log('INFO', 'next:advanced', {
+    id: fancyId,
+    recipeId: recipeId,
+    current: currentId || null,
+    next: nextId || null,
+    status: status,
+    remaining: sequence.length ? Math.max(sequence.length - nextIdx - (status === STATUS.PICKING ? 0 : 1), 0) : 0
+  });
+
+  return buildSnapshot_(ctx, fancyId, recipeId, nextId, product);
+}
+
+/**
+ * pause: set status to paused but keep current part.
+ */
+function handlePause_(ctx, fancyId) {
+  const progress = readProgressState_();
+  const products = loadProducts_();
+  const product = products.map[fancyId] || null;
+  const recipeId = progress.recipeId || (product && product.recipeId) || fancyId;
+  const timestamp = setProgressState_({
+    status: STATUS.PAUSED,
+    fancyId: fancyId,
+    recipeId: recipeId,
+    partId: progress.partId
+  });
+
+  if (product) {
+    updateProductState_(products, product, {
+      status: STATUS.PAUSED,
+      partId: progress.partId,
+      lastUpdate: timestamp
+    });
+  }
+
+  ctx.log('INFO', 'pause:set', { id: fancyId, recipeId: recipeId, partId: progress.partId || null });
+}
+
+/**
+ * resume: mark status back to picking and return latest snapshot.
+ */
+function handleResume_(ctx, fancyId) {
+  const progress = readProgressState_();
+  const products = loadProducts_();
+  const product = products.map[fancyId] || null;
+  const recipeId = progress.recipeId || (product && product.recipeId) || fancyId;
+  const timestamp = setProgressState_({
+    status: STATUS.PICKING,
+    fancyId: fancyId,
+    recipeId: recipeId,
+    partId: progress.partId
+  });
+
+  if (product) {
+    updateProductState_(products, product, {
+      status: STATUS.PICKING,
+      partId: progress.partId,
+      lastUpdate: timestamp
+    });
+  }
+
+  ctx.log('INFO', 'resume:set', { id: fancyId, recipeId: recipeId, partId: progress.partId || null });
+  return buildSnapshot_(ctx, fancyId, recipeId, progress.partId, product);
+}
+
+/**
+ * Build snapshot payload using Products/Parts sheets.
+ */
+function buildSnapshot_(ctx, fancyId, recipeId, partId, product) {
+  product = product || (loadProducts_().map[fancyId] || null);
+  const partDetails = getPartDetails_(recipeId, partId);
+  const snap = {
+    id: fancyId,
+    name: product ? product.name : '',
+    partId: partDetails.id || (partId || ''),
+    partName: partDetails.name || '',
+    qty: partDetails.qty || '',
+    img: partDetails.img || ''
+  };
+  if (snap.partId && !partId && ctx && typeof ctx.log === 'function') {
+    ctx.log('INFO', 'snapshot:filledPartId', { id: fancyId, recipeId: recipeId, partId: snap.partId });
+  }
+  return snap;
+}
+
+/**
+ * Read or create the Progress sheet and persist row-2 state.
+ */
+function setProgressState_(state) {
+  const sheet = ensureProgressSheet_();
+  const now = new Date();
+
+  if (typeof state.status !== 'undefined') {
+    sheet.getRange('A2').setValue(state.status || '');
+  }
+  if (typeof state.partId !== 'undefined') {
+    sheet.getRange('B2').setValue(state.partId || '');
+  }
+  if (typeof state.fancyId !== 'undefined') {
+    sheet.getRange('C2').setValue(state.fancyId || '');
+  }
+  if (typeof state.recipeId !== 'undefined') {
+    sheet.getRange('D2').setValue(state.recipeId || '');
+  }
+  if (state.touchTimestamp !== false) {
+    sheet.getRange('E2').setValue(now);
+  }
+  return now;
+}
+
+/**
+ * Read current progress row.
+ */
+function readProgressState_() {
+  const sheet = getSheet_(SHEET_NAMES.progress);
+  if (!sheet) {
+    return { status: '', partId: '', fancyId: '', recipeId: '', lastUpdate: null };
+  }
+  const values = sheet.getRange(2, 1, 1, 5).getValues();
+  const row = values && values.length ? values[0] : [];
+  return {
+    status: String(row[0] || ''),
+    partId: String(row[1] || '').trim(),
+    fancyId: String(row[2] || '').trim(),
+    recipeId: String(row[3] || '').trim(),
+    lastUpdate: row[4] instanceof Date ? row[4] : null
+  };
+}
+
+/**
+ * Load product table (cached per invocation).
+ */
+function loadProducts_() {
+  const cacheKey = '_products';
+  if (loadProducts_[cacheKey]) return loadProducts_[cacheKey];
+
+  const sheet = getSheet_(SHEET_NAMES.products);
+  const result = {
+    sheet: sheet,
+    header: [],
+    entries: [],
+    map: {},
+    indexes: {}
+  };
+  if (!sheet) {
+    loadProducts_[cacheKey] = result;
+    return result;
+  }
+
+  const values = sheet.getDataRange().getValues();
+  if (!values.length) {
+    loadProducts_[cacheKey] = result;
+    return result;
+  }
+
+  const header = values[0];
+  const rows = values.slice(1);
+  const idxFancy = getHeaderIndex_(header, HEADER_KEYS.fancyId);
+  const idxName = getHeaderIndex_(header, HEADER_KEYS.productName);
+  const idxStatus = getHeaderIndex_(header, HEADER_KEYS.status);
+  const idxRecipe = getHeaderIndex_(header, HEADER_KEYS.recipeId);
+  const idxProgPart = getHeaderIndex_(header, HEADER_KEYS.progPartId);
+  const idxLastUpdate = getHeaderIndex_(header, HEADER_KEYS.lastUpdate);
+
+  const entries = rows.map(function (row, i) {
+    const id = idxFancy >= 0 ? cleanString_(row[idxFancy]) : cleanString_(row[0]);
+    if (!id) return null;
+    return {
+      id: id,
+      name: idxName >= 0 ? cleanString_(row[idxName]) : '',
+      status: idxStatus >= 0 ? cleanString_(row[idxStatus]) : '',
+      recipeId: idxRecipe >= 0 ? cleanString_(row[idxRecipe]) : '',
+      progPartId: idxProgPart >= 0 ? cleanString_(row[idxProgPart]) : '',
+      lastUpdate: idxLastUpdate >= 0 ? row[idxLastUpdate] : null,
+      rowNumber: i + 2
+    };
+  }).filter(function (x) { return !!x; });
+
+  const map = {};
+  entries.forEach(function (entry) { map[entry.id] = entry; });
+
+  result.header = header;
+  result.entries = entries;
+  result.map = map;
+  result.indexes = {
+    fancyId: idxFancy,
+    productName: idxName,
+    status: idxStatus,
+    recipeId: idxRecipe,
+    progPartId: idxProgPart,
+    lastUpdate: idxLastUpdate
+  };
+
+  loadProducts_[cacheKey] = result;
+  return result;
+}
+
+/**
+ * Update products sheet row with latest status/part/timestamp.
+ */
+function updateProductState_(products, entry, updates) {
+  if (!products.sheet || !entry) return;
+  const idx = products.indexes;
+  const sheet = products.sheet;
+  const row = entry.rowNumber;
+
+  if (typeof updates.status !== 'undefined' && idx.status >= 0) {
+    sheet.getRange(row, idx.status + 1).setValue(updates.status || '');
+  }
+  if (typeof updates.partId !== 'undefined' && idx.progPartId >= 0) {
+    sheet.getRange(row, idx.progPartId + 1).setValue(updates.partId || '');
+  }
+  const ts = typeof updates.lastUpdate !== 'undefined' ? updates.lastUpdate : new Date();
+  if (idx.lastUpdate >= 0) {
+    sheet.getRange(row, idx.lastUpdate + 1).setValue(ts);
+  }
+}
+
+/**
+ * Resolve ordered part IDs for recipe/product.
+ */
+function collectPartSequence_(ctx, recipeId) {
+  const cleanId = cleanString_(recipeId);
+  if (!cleanId) return [];
+
+  // Try Recipe sheet first
+  const recipeSheet = getSheet_(SHEET_NAMES.recipe);
+  if (recipeSheet) {
+    const values = recipeSheet.getDataRange().getValues();
+    if (values.length > 1) {
+      const header = values[0];
+      const idxProduct = getHeaderIndex_(header, HEADER_KEYS.recipeProductId);
+      const idxPart = getHeaderIndex_(header, HEADER_KEYS.recipePartId);
+      if (idxPart >= 0) {
+        const list = values.slice(1).filter(function (row) {
+          if (idxProduct < 0) return true;
+          return idsEqual_(row[idxProduct], cleanId);
+        }).map(function (row) {
+          return cleanString_(row[idxPart]);
+        }).filter(Boolean);
+        if (list.length) {
+          ctx.log('INFO', 'parts:fromRecipe', { recipeId: cleanId, count: list.length });
+          return list;
         }
-        return items;
-      })();
-      try{ logInfo_('list:ok', { count: items.length }); }catch(_){ }
-      return jsonResponse_({ ok:true, data: items }, debugResp);
-    }
-
-    // list: 製品一覧を返す
-    if (action === 'list'){
-      const ss = SpreadsheetApp.getActiveSpreadsheet();
-      // 管理シート名の候補
-      const candidates = ['Products'];
-      let manage = null;
-      for (var i=0;i<candidates.length;i++){ manage = ss.getSheetByName(candidates[i]); if(manage) break; }
-      const rows = manage ? manage.getDataRange().getValues() : [];
-      // 先頭行をヘッダとみなす
-      let items = [];
-      if (rows.length>0){
-        const H = (rows[0]||[]).map(String);
-        const idIdx = localGetHeaderIndex_(H, ['ProductID']);
-        const nameIdx = localGetHeaderIndex_(H, ['ProductName']);
-        items = rows.slice(1).map(function(r){ return { id: String(idIdx>=0? r[idIdx]: r[0]||''), name: String(nameIdx>=0? r[nameIdx]: r[1]||'') }; }).filter(function(x){ return x.id; });
       }
-      return jsonResponse_({ ok:true, data: items }, debugResp);
-    }
-  if (action === 'snapshot'){
-      const snap = getPickingSnapshotFixed_(data.id);
-      try{ logInfo_('snapshot:ok', { id: data.id, partId: snap.partId, partName: snap.partName, qty: snap.qty }); }catch(_){ }
-      return jsonResponse_({ ok:true, data:snap }, debugResp);
-    }
-    if (action === 'next'){
-      if (typeof nextPart === 'function') nextPart();
-      const snap = getPickingSnapshotFixed_(data.id);
-      try{ logInfo_('next:ok', { id: data.id, partId: snap.partId, partName: snap.partName, qty: snap.qty }); }catch(_){ }
-      return jsonResponse_({ ok:true, data:snap }, debugResp);
-    }
-    if (action === 'pause'){
-      if (typeof pausePicking === 'function') pausePicking();
-      try{ logInfo_('pause:ok', { id: data.id }); }catch(_){ }
-      return jsonResponse_({ ok:true }, debugResp);
-    }
-    if (action === 'start'){
-      if (typeof startPickingWithProduct === 'function') startPickingWithProduct(data.id);
-      const snap = getPickingSnapshotFixed_(data.id);
-      try{ logInfo_('start:ok', { id: data.id, partId: snap.partId, partName: snap.partName, qty: snap.qty }); }catch(_){ }
-      return jsonResponse_({ ok:true, data:snap }, debugResp);
-    }
-    if (action === 'resume'){
-      const ss = SpreadsheetApp.getActiveSpreadsheet();
-      let s = ss.getSheetByName('Progress');
-      if (!s){
-        s = ss.insertSheet('Progress');
-        s.getRange('A1').setValue('Status');
-        s.getRange('B1').setValue('PartID');
-        s.getRange('C1').setValue('FancyID');
-        s.getRange('D1').setValue('RecipeID');
-      }
-      s.getRange('C2').setValue(data.id);
-      s.getRange('A2').setValue('進行中');
-      // resolve model id
-      const manage = ss.getSheetByName('Products');
-      if (manage){
-        const mv = manage.getDataRange().getValues();
-        const idx = localGetHeaderIndex_(mv[0], ['RecipeID']);
-        const row = mv.slice(1).find(r => String(r[0]) === String(data.id));
-        if (row && idx >= 0) s.getRange('D2').setValue(String(row[idx]||''));
-      }
-      // init part if needed
-      const parts = ss.getSheetByName('Parts');
-      if (parts){
-        const pv = parts.getDataRange().getValues();
-        if (pv.length>1){
-          const H = pv[0].map(String);
-          const prodCol = H.indexOf('ProductID');
-          const partCol = H.indexOf('PartID');
-          const key = String(s.getRange('D2').getValue()||data.id);
-          let list = pv.slice(1).filter(r => String(r[prodCol]) === key);
-          const cur = String(s.getRange('B2').getValue()||'');
-          const exists = cur && list.some(r => String(r[partCol]) === cur);
-          if (!exists && list.length) s.getRange('B2').setValue(String(list[0][partCol]));
-        }
-      }
-      if (typeof updateManageProgress_ === 'function'){
-        const cur = String(s.getRange('B2').getValue()||'');
-        updateManageProgress_(data.id, cur, '進行中');
-      }
-      const snap = getPickingSnapshotFixed_(data.id);
-      return jsonResponse_({ ok:true, data:snap }, debugResp);
-    }
-  }catch(err){
-    try{ logError_('doPost:error', { message: err && err.message, stack: String(err && err.stack || '') }); }catch(_){ }
-    return jsonResponse_({ ok:false, error: err.message }, true);
-  }
-  return jsonResponse_({ ok:false, error:'bad request' }, true);
-}
-
-// ----- Pages -----
-function renderMenu_(){
-  const base = ScriptApp.getService().getUrl();
-  var h = '';
-  h += '<!doctype html><html><head><meta charset="utf-8">';
-  h += '<meta name="viewport" content="width=device-width, initial-scale=1">';
-  h += '<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Noto Sans JP,sans-serif;margin:16px}';
-  h += 'h2{margin:8px 0 16px} a.btn,button{display:block;width:100%;padding:14px 16px;margin:10px 0;font-size:18px;text-align:center;border-radius:10px;border:1px solid #ccc;background:#fff}';
-  h += '.note{color:#666;font-size:12px;margin-top:10px}</style></head><body>';
-  h += '<h2>KittingFlow モバイル</h2>';
-  h += '<a class="btn" target="_top" rel="noopener" href="'+base+'?page=start">📦 ピッキング開始</a>';
-  h += '<a class="btn" target="_top" rel="noopener" href="'+base+'?page=label">🏷 ラベル印刷</a>';
-  h += '<div style="margin-top:14px">QR/手入力で再開:</div>';
-  h += '<input id="resumeId" placeholder="ProductID (MK-...)" style="width:100%;font-size:18px;padding:10px">';
-  h += '<button onclick="(function(){var v=document.getElementById(\'resumeId\').value.trim(); if(!v){alert(\'ProductIDを入力\');return;} try{ top.location.href=\''+base+'?id=\'+encodeURIComponent(v);}catch(e){ location.href=\''+base+'?id=\'+encodeURIComponent(v);} })()">▶ 再開</button>';
-  h += '<script>try{ if (top !== self) top.location.href = location.href; }catch(e){}</script>';
-  h += '<div class="note">ブックマークしてiPadホームに追加すると便利です。</div>';
-  h += debugFooterHtml_();
-  h += debugFooterHtml_();
-  h += debugFooterHtml_();
-  h += debugFooterHtml_();
-  h += '</body></html>';
-  return h;
-}
-
-function renderStart_(){
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const manage = ss.getSheetByName('Products');
-  const rows = manage ? manage.getDataRange().getValues() : [];
-  const items = rows.slice(1).map(r=>({id:String(r[0]||''), name:String(r[1]||'')})).filter(x=>x.id);
-  const data = JSON.stringify(items);
-  const base = ScriptApp.getService().getUrl();
-  var h='';
-  h += '<!doctype html><html><head><meta charset="utf-8">';
-  h += '<meta name="viewport" content="width=device-width, initial-scale=1">';
-  h += '<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Noto Sans JP,sans-serif;margin:16px}';
-  h += 'h2{margin:8px 0 12px} select,input{width:100%;font-size:18px;padding:10px} button{width:100%;padding:12px;margin-top:10px;border-radius:10px;border:1px solid #ccc;background:#fff}</style></head><body>';
-  h += '<h2>商品を選択</h2><input id="q" placeholder="検索 (ID/名称)"><select id="sel" size="12" style="margin-top:8px;"></select><button id="go">開始</button>';
-  h += '<script>const data='+data+';const sel=document.getElementById(\'sel\');';
-  h += 'function r(list){sel.innerHTML=list.map(function(p){return \"<option value=\\\"\"+p.id+\"\\\">\"+p.id+(p.name?\" - \"+p.name:\"\")+\"</option>\";}).join(\"\"); if(sel.options.length) sel.selectedIndex=0;}';
-  h += 'r(data);document.getElementById(\'q\').oninput=function(e){var q=e.target.value.toLowerCase(); r(data.filter(function(p){return (p.id+\" \"+(p.name||\"\")).toLowerCase().indexOf(q)>-1;}));};';
-  h += 'document.getElementById(\'go\').onclick=function(){var id=sel.value;if(!id){alert(\'ProductIDを選択\');return;} google.script.run.withSuccessHandler(function(){ try{ top.location.href=\''+base+'?page=pick&id=\'+encodeURIComponent(id);}catch(e){ location.href=\''+base+'?page=pick&id=\'+encodeURIComponent(id);} }).startPickingWithProduct(id);};';
-  h += '<script>try{ if (top !== self) top.location.href = location.href; }catch(e){}</script>';
-  h += '</script>';
-  h += debugFooterHtml_();
-  h += debugFooterHtml_();
-  h += '</body></html>';
-  return h;
-}
-
-function renderPick_(id){
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const manage = ss.getSheetByName('Products');
-  const rows = manage ? manage.getDataRange().getValues() : [];
-  var name=''; var r=rows.find(function(x){return String(x[0])===String(id)}); if(r) name=String(r[1]||'');
-  const prog = ss.getSheetByName('Progress');
-  let partId = prog ? String(prog.getRange('B2').getValue()||'') : '';
-  const modelId = prog ? String(prog.getRange('D2').getValue()||'') : '';
-  const parts = ss.getSheetByName('Parts');
-  var partName='', qty='', img='';
-  if (parts){
-    const pv = parts.getDataRange().getValues();
-    if (pv.length>1){
-      const H = pv[0].map(String);
-      const prodCol = H.indexOf('ProductID');
-      const partCol = H.indexOf('PartID');
-      const nameCol = H.indexOf('PartName');
-      const imgCol  = H.indexOf('ImageURL');
-      const qtyCol  = H.indexOf('Qty');
-      logInfo_('renderPick:lookup', { id: id, modelId: modelId, partId: partId });
-      let list = pv.slice(1).filter(function(x){return String(x[prodCol]) === (modelId||id)});
-      const hit  = list.find(function(x){return String(x[partCol])===partId}) || list[0];
-      if (hit){ partName = nameCol>=0? String(hit[nameCol]||''):''; qty = qtyCol>=0? String(hit[qtyCol]||''):''; img = imgCol>=0? String(hit[imgCol]||''):''; }
     }
   }
 
-  const base = ScriptApp.getService().getUrl();
-  const data = JSON.stringify({id:id, name:name, partId:partId, partName:partName, qty:qty, img:img});
-  console.log('renderPick data=' + data);
-  var h='';
-  h += '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">';
-  h += '<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Noto Sans JP,sans-serif;margin:16px}';
-  h += 'h2{margin:6px 0 14px}.card{border:1px solid #ddd;border-radius:12px;padding:14px}.img{width:220px;height:220px;object-fit:contain;border:1px solid #eee;margin:8px auto;display:block}';
-  h += 'button{width:100%;padding:14px;margin:8px 0;border-radius:10px;border:1px solid #ccc;background:#fff;font-size:18px}</style></head><body>';
-  h += '<div id="app"></div><script>const v='+data+';';
-  h += 'document.getElementById(\'app\').innerHTML="<h2>ピッキング</h2><div class=\\\"card\\\"><div><b>ProductID:</b> "+v.id+"</div><div><b>製品名:</b> "+(v.name||"")+"</div><div style=\\\"margin-top:8px;\\\"><b>部品:</b> "+(v.partId||"")+ (v.partName?" / "+v.partName:"")+ (v.qty?" / Qty "+v.qty:"")+"</div>"+(v.img?"<img class=img src=\\\""+v.img+"\\\">":"")+"<button id=next>次へ ▶</button><button id=pause>⏸ 中断</button><button id=label>🏷 ラベル印刷</button></div>";';
-  h += 'document.getElementById(\'next\').onclick=function(){ if(!window.google||!google.script||!google.script.run){alert(\'実行環境エラー\');return;} google.script.run.withFailureHandler(function(e){alert(\'エラー: \'+(e&&e.message?e.message:e));}).withSuccessHandler(function(){location.href=\''+base+'?page=pick&id=\'+encodeURIComponent(v.id)+\'&t=\'+Date.now();}).nextPart();};';
-  h += 'document.getElementById(\'pause\').onclick=function(){ if(!window.google||!google.script||!google.script.run){alert(\'実行環境エラー\');return;} google.script.run.withFailureHandler(function(e){alert(\'エラー: \'+(e&&e.message?e.message:e));}).withSuccessHandler(function(){alert(\'中断しました\');}).pausePicking();};';
-  h += 'document.getElementById(\'label\').onclick=function(){ location.href=\''+base+'?page=label&id=\'+encodeURIComponent(v.id); };';
-  h += '</script>';
-  h += debugFooterHtml_();
-  h += '</body></html>';
-  return h;
-}
-
-function renderLabel_(id, size, margin, showName){
-  const s = String(size||'40x30').split('x'); const w=Number(s[0]||40), h=Number(s[1]||30); const m=Number(margin||2); const sn = showName!=='0' && showName!=='false';
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const manage = ss.getSheetByName('Products');
-  var name=''; if (manage){ var rows=manage.getDataRange().getValues(); var r=rows.find(function(x){return String(x[0])===String(id)}); if(r) name=String(r[1]||''); }
-  const url = ScriptApp.getService().getUrl();
-  const target = url ? (url+'?id='+id) : String(id);
-  const qr = 'https://api.qrserver.com/v1/create-qr-code/?size=400x400&data='+encodeURIComponent(target);
-  var css = '@page { size:'+w+'mm '+h+'mm; margin:'+m+'mm } html,body{height:100%} body{margin:0; width:'+w+'mm; height:'+h+'mm; display:flex; align-items:center; justify-content:center} .label{width:100%;height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; font-family:system-ui,-apple-system,Segoe UI,Roboto,Noto Sans JP,sans-serif} .qr{width:calc(100% - '+(m*2)+'mm); height:auto} .id{font-weight:700; font-size:10pt; margin-top:1mm} .name{font-size:8pt; margin-top:0.5mm; text-align:center; padding:0 2mm; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; max-width:100%}';
-  var htm = '<!doctype html><html><head><meta charset="utf-8"><style>'+css+'</style></head><body><div class="label"><img class="qr" src="'+qr+'"><div class="id">'+id+'</div>'+(sn && name?('<div class="name">'+name+'</div>'):'')+'</div><script>setTimeout(function(){window.print()},400);</script></body></html>';
-  return htm;
-}
-
-function renderResume_(id){
-  const url = ScriptApp.getService().getUrl();
-  var h='';
-  h += '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Noto Sans JP,sans-serif;margin:16px} button{width:100%;padding:14px;border-radius:10px;border:1px solid #ccc;background:#fff}</style></head><body>';
-  h += '<h3>ProductID: '+id+'</h3><button id="go">▶ 再開する</button><p id="msg"></p>';
-  h += '<script>document.getElementById(\'go\').onclick=async function(){ var res=await fetch(\''+url+'\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({action:\'resume\',id:\''+id+'\'})}); document.getElementById(\'msg\').innerText=await res.text(); };</script>';
-  h += '</body></html>';
-  return h;
-}
-
-function renderMissingId_(next){
-  const base = ScriptApp.getService().getUrl();
-  const title = next==='label' ? 'ラベル印刷' : (next==='pick' ? 'ピッキング' : '再開');
-  var go;
-  if (next==='label') go = "location.href=base+'?page=label&id='+encodeURIComponent(v)";
-  else if (next==='pick') go = "location.href=base+'?page=pick&id='+encodeURIComponent(v)";
-  else go = "location.href=base+'?id='+encodeURIComponent(v)";
-  var h='';
-  h += '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">';
-  h += '<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Noto Sans JP,sans-serif;margin:16px} input,button{width:100%;font-size:18px;padding:12px} button{margin-top:10px;border-radius:10px;border:1px solid #ccc;background:#fff}</style></head><body>';
-  h += '<h3>IDが指定されていません</h3><p>'+title+'の対象となるProductIDを入力してください。</p><input id="pid" placeholder="ProductID (例: MK-...)" autofocus><button onclick="(function(){var v=document.getElementById(\'pid\').value.trim(); if(!v){alert(\'ProductIDを入力してください\');return;} var base=\''+base+'\'; '+go+'; })()">続行</button><p style="margin-top:8px"><a href="'+base+'?page=menu">メニューに戻る</a></p>';
-  h += '</body></html>';
-  return h;
-}
-
-// ===== Active snapshot helpers =====
-function getPickingSnapshot_(id){
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const manage = ss.getSheetByName('Products');
-  const rows = manage ? manage.getDataRange().getValues() : [];
-  var name=''; var r = rows.find(function(x){ return String(x[0])===String(id); }); if (r) name = String(r[1]||'');
-  const prog = ss.getSheetByName('Progress');
-  let partId = prog ? String(prog.getRange('B2').getValue()||'') : '';
-  const modelId = prog ? String(prog.getRange('D2').getValue()||'') : '';
-  const parts = ss.getSheetByName('Parts');
-  var partName='', qty='', img='';
-  if (parts){
-    const pv = parts.getDataRange().getValues();
-    if (pv.length>1){
-      const H = pv[0].map(String);
-      const prodCol = H.indexOf('ProductID');
-      const partCol = H.indexOf('PartID');
-      const nameCol = H.indexOf('PartName');
-      const imgCol  = H.indexOf('ImageURL');
-      const qtyCol  = H.indexOf('Qty');
-      let list = pv.slice(1).filter(function(x){ return String(x[prodCol]) === (modelId||id); });
-      const hit  = list.find(function(x){ return String(x[partCol])===partId; }) || list[0];
-      if (hit){ partName = nameCol>=0? String(hit[nameCol]||''):''; qty = qtyCol>=0? String(hit[qtyCol]||''):''; img = imgCol>=0? String(hit[imgCol]||''):''; }
-    }
+  // Fallback to Parts sheet
+  const partsSheet = getSheet_(SHEET_NAMES.parts);
+  if (!partsSheet) return [];
+  const data = partsSheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+  const header = data[0];
+  const idxProduct = getHeaderIndex_(header, HEADER_KEYS.partsProductId);
+  const idxPart = getHeaderIndex_(header, HEADER_KEYS.partsPartId);
+  const list = data.slice(1).filter(function (row) {
+    if (idxProduct < 0) return true;
+    return idsEqual_(row[idxProduct], cleanId);
+  }).map(function (row) {
+    return idxPart >= 0 ? cleanString_(row[idxPart]) : cleanString_(row[0]);
+  }).filter(Boolean);
+  if (list.length) {
+    ctx.log('INFO', 'parts:fromPartsSheet', { recipeId: cleanId, count: list.length });
+  } else {
+    ctx.log('WARN', 'parts:notFound', { recipeId: cleanId });
   }
-  return { id:id, name:name, partId:partId, partName:partName, qty:qty, img:img };
+  return list;
 }
 
-// ----- Logging helpers -----
-function logInfo_(tag, obj){
-  try{
-    Logger.log(tag + ' ' + JSON.stringify(obj));
-    sheetLog_('INFO', tag, obj);
-  }catch(_){ }
-}
-function logError_(tag, obj){
-  try{
-    Logger.log('ERROR ' + tag + ' ' + JSON.stringify(obj));
-    sheetLog_('ERROR', tag, obj);
-  }catch(_){ }
-}
-function sheetLog_(level, tag, obj){
-  try{
-    var sp = PropertiesService.getScriptProperties();
-    var enabled = String(sp.getProperty('ENABLE_SHEET_LOG')||'').toLowerCase();
-    if (!(enabled==='1' || enabled==='true' || enabled==='yes')) return;
-    var name = sp.getProperty('LOG_SHEET') || 'Logs';
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sh = ss.getSheetByName(name) || ss.insertSheet(name);
-    sh.appendRow([new Date(), level, tag, JSON.stringify(obj||{})]);
-  }catch(_){ }
+/**
+ * Fetch detail for specific part ID.
+ */
+function getPartDetails_(recipeId, partId) {
+  const sheet = getSheet_(SHEET_NAMES.parts);
+  if (!sheet) {
+    return { id: cleanString_(partId), name: '', qty: '', img: '' };
+  }
+
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) {
+    return { id: cleanString_(partId), name: '', qty: '', img: '' };
+  }
+  const header = data[0];
+  const idxProduct = getHeaderIndex_(header, HEADER_KEYS.partsProductId);
+  const idxPart = getHeaderIndex_(header, HEADER_KEYS.partsPartId);
+  const idxName = getHeaderIndex_(header, HEADER_KEYS.partsName);
+  const idxQty = getHeaderIndex_(header, HEADER_KEYS.partsQty);
+  const idxImg = getHeaderIndex_(header, HEADER_KEYS.partsImg);
+
+  const filtered = data.slice(1).filter(function (row) {
+    if (!recipeId || idxProduct < 0) return true;
+    return idsEqual_(row[idxProduct], recipeId);
+  });
+
+  var target = null;
+  if (partId && idxPart >= 0) {
+    target = filtered.find(function (row) { return idsEqual_(row[idxPart], partId); }) ||
+      data.slice(1).find(function (row) { return idsEqual_(row[idxPart], partId); }) ||
+      null;
+  }
+  if (!target) target = filtered.length ? filtered[0] : (data.length > 1 ? data[1] : null);
+  if (!target) {
+    return { id: cleanString_(partId), name: '', qty: '', img: '' };
+  }
+
+  return {
+    id: idxPart >= 0 ? cleanString_(target[idxPart]) : cleanString_(partId),
+    name: idxName >= 0 ? String(target[idxName] || '') : '',
+    qty: idxQty >= 0 ? String(target[idxQty] || '') : '',
+    img: idxImg >= 0 ? String(target[idxImg] || '') : ''
+  };
 }
 
-// JSON response helper with optional debug log injection
-function jsonResponse_(obj, debug){
-  try{
-    if (debug){
-      var logText = '';
-      try { logText = Logger.getLog(); } catch(_){ logText=''; }
-      obj = Object.assign({}, obj, { _debug: { log: logText } });
+/**
+ * Create or fetch the Progress sheet object.
+ */
+function ensureProgressSheet_() {
+  const sheet = getSheet_(SHEET_NAMES.progress);
+  if (sheet) return sheet;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const created = ss.insertSheet('Progress');
+  created.getRange(1, 1, 1, 5).setValues([['Status', 'PartID', 'FancyID', 'RecipeID', 'LastUpdate']]);
+  return created;
+}
+
+/**
+ * Wrapper around Script Properties + Logger for capturing debug info.
+ */
+function createContext_(e) {
+  const raw = e && e.postData && typeof e.postData.contents === 'string' ? e.postData.contents : '{}';
+  let request = {};
+  try {
+    request = JSON.parse(raw);
+  } catch (err) {
+    request = {};
+  }
+  const action = String(request.action || '').trim().toLowerCase();
+  const sp = PropertiesService.getScriptProperties();
+
+  const debugFlag = isTruthy_(sp.getProperty('DEBUG_RESPONSE')) || isTruthy_(request.debug);
+  const sheetLogEnabled = isTruthy_(sp.getProperty('ENABLE_SHEET_LOG'));
+  const logSheetName = sp.getProperty('LOG_SHEET') || SHEET_NAMES.logs[0];
+
+  // clear per-invocation caches
+  try { delete loadProducts_._products; } catch (err) { /* noop */ }
+
+  const ctx = {
+    raw: raw,
+    request: request,
+    action: action,
+    sp: sp,
+    debug: debugFlag,
+    logs: [],
+    logSheet: sheetLogEnabled ? logSheetName : null
+  };
+
+  ctx.log = function (level, tag, meta) {
+    const entry = {
+      ts: new Date(),
+      level: level || 'INFO',
+      tag: tag || '',
+      meta: meta || {}
+    };
+    const line = entry.ts.toISOString() + ' [' + entry.level + '] ' + entry.tag + ' ' + JSON.stringify(entry.meta);
+    ctx.logs.push(line);
+    try {
+      Logger.log('[' + entry.level + '] ' + entry.tag + ' ' + JSON.stringify(entry.meta));
+    } catch (err) {
+      // ignore
     }
-  }catch(_){ }
-  return ContentService.createTextOutput(JSON.stringify(obj))
+    if (ctx.logSheet) {
+      appendSheetLog_(ctx.logSheet, entry);
+    }
+  };
+
+  return ctx;
+}
+
+/**
+ * Attach debug log (optional) and build JSON response.
+ */
+function jsonResponse_(ctx, payload) {
+  const out = Object.assign({}, payload);
+  if (ctx && ctx.debug) {
+    out._debug = { log: ctx.logs.join('\n') };
+  }
+  return ContentService
+    .createTextOutput(JSON.stringify(out))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// ----- Debug footer injection -----
-function debugFooterHtml_(){
-  try{
-    var css = '<style id="__dbg_css">'
-      + '#__dbg_wrap{position:fixed;left:0;right:0;bottom:0;background:rgba(0,0,0,.85);color:#fff;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;z-index:9999;box-shadow:0 -2px 6px rgba(0,0,0,.3)}'
-      + '#__dbg_bar{display:flex;align-items:center;gap:8px;padding:4px 8px;border-top:1px solid rgba(255,255,255,.15);background:rgba(30,30,30,.9)}'
-      + '#__dbg_bar b{font-size:12px;opacity:.8}'
-      + '#__dbg_toggle{margin-left:auto;color:#fff;background:transparent;border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:2px 6px;cursor:pointer}'
-      + '#__dbg_log{max-height:30vh;overflow:auto;padding:6px 8px;white-space:pre-wrap;word-break:break-word}'
-      + '#__dbg_wrap.min #__dbg_log{display:none}'
-      + '#__dbg_log .ln{opacity:.9}'
-      + '#__dbg_log .ln.warn{color:#ffd166}'
-      + '#__dbg_log .ln.error{color:#ff6b6b}'
-      + '</style>';
-    var html = ''
-      + '<div id="__dbg_wrap" class="min">'
-      + '  <div id="__dbg_bar"><b>Debug</b><span id="__dbg_status" style="opacity:.6"></span><button id="__dbg_toggle">Show</button></div>'
-      + '  <div id="__dbg_log"></div>'
-      + '</div>'
-      + '<script>(function(){try{'
-      + ' var wrap=document.getElementById("__dbg_wrap");'
-      + ' var logEl=document.getElementById("__dbg_log");'
-      + ' var btn=document.getElementById("__dbg_toggle");'
-      + ' var statusEl=document.getElementById("__dbg_status");'
-      + ' if(!wrap||!logEl||!btn){return;}'
-      + ' btn.onclick=function(){ if(wrap.classList.contains("min")){ wrap.classList.remove("min"); btn.textContent="Hide"; } else { wrap.classList.add("min"); btn.textContent="Show"; } };'
-      + ' function fmt(v){ try{ if(v===undefined) return "undefined"; if(v===null) return "null"; if(typeof v==="object") return JSON.stringify(v); return String(v); }catch(e){ return String(v); } }'
-      + ' function add(level,args){ try{ var line=document.createElement("div"); line.className="ln "+level; var ts=new Date().toLocaleTimeString(); line.textContent="["+ts+"] ["+level.toUpperCase()+"] "+[].map.call(args,fmt).join(" "); logEl.appendChild(line); logEl.scrollTop=logEl.scrollHeight; statusEl.textContent="("+level+")"; }catch(_){ } }'
-      + ' ["log","info","warn","error"].forEach(function(m){ var o=console[m]; console[m]=function(){ try{ add(m,arguments);}catch(_){ } try{ return o&&o.apply(console,arguments);}catch(e){ } }; });'
-      + ' window.addEventListener("error",function(e){ add("error", [e.message || "error", e.filename+":"+e.lineno]);});'
-      + ' window.__dbg = { add: add, el: logEl };'
-      + '}catch(_){}})();</script>';
-    return css + html;
-  }catch(_){ return ''; }
-}
-
-// ----- Picking state mutators -----
-function ensureProgressSheet_(){
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sh = ss.getSheetByName('Progress');
-  if (!sh){
-    sh = ss.insertSheet('Progress');
-    sh.getRange('A1').setValue('Status');
-    sh.getRange('B1').setValue('PartID');
-    sh.getRange('C1').setValue('FancyID');
-    sh.getRange('D1').setValue('RecipeID');
-    sh.getRange('E1').setValue('LastUpdate');
-  }
-  return sh;
-}
-function getPartsListFor_(recipeId){
-  // Try Recipe first (推奨)。なければPartsのProductIDでフォールバック
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const recipe = ss.getSheetByName('Recipe');
-  if (recipe){
-    const rv = recipe.getDataRange().getValues();
-    if (rv.length>1){
-      const H = rv[0].map(String);
-      const prodCol = localGetHeaderIndex_(H, ['ProductID']);
-      const useCol  = localGetHeaderIndex_(H, ['PartID']);
-      const rows = rv.slice(1).filter(r => prodCol>=0 ? String(r[prodCol])===String(recipeId) : false);
-      const ids = rows.map(r => String(useCol>=0 ? r[useCol] : (r[1]||''))).filter(Boolean);
-      if (ids.length){ return ids; }
+/**
+ * Append a row to sheet-based log if enabled.
+ */
+function appendSheetLog_(sheetName, entry) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) return;
+    let sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      sheet = ss.insertSheet(sheetName);
+      sheet.appendRow(['Timestamp', 'Level', 'Tag', 'Meta']);
     }
+    sheet.appendRow([entry.ts, entry.level, entry.tag, JSON.stringify(entry.meta || {})]);
+  } catch (err) {
+    Logger.log('[WARN] appendSheetLog failed: ' + err);
   }
-  // fallback: PartsからProductIDで抽出
-  const parts = ss.getSheetByName('Parts') || ss.getSheetByName('部品') || ss.getSheetByName('Parts');
-  if (!parts) return [];
-  const pv = parts.getDataRange().getValues();
-  if (pv.length < 2) return [];
-  const H = pv[0].map(String);
-  const prodCol = localGetHeaderIndex_(H, ['ProductID']);
-  const partCol = localGetHeaderIndex_(H, ['PartID']);
-  let rows = pv.slice(1).filter(r => prodCol<0 ? true : String(r[prodCol]) === String(recipeId));
-  if (!rows.length) {
-    try{ logInfo_('parts:list:fallbackAll', { recipeId }); }catch(_){ }
-    rows = pv.slice(1);
-  }
-  return rows.map(r => String(partCol>=0 ? r[partCol] : r[0])).filter(Boolean);
 }
 
-// Override: support Japanese sheet/header names for recipe/parts
-function getPartsListFor_(recipeId){
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  // Prefer recipe sheet
-  var recipe = findSheet_(['Recipe']);
-  if (recipe){
-    var rv = recipe.getDataRange().getValues();
-    if (rv.length>1){
-      var H = rv[0].map(String);
-      var prodCol = localGetHeaderIndex_(H, ['ProductID']);
-      var useCol  = localGetHeaderIndex_(H, ['PartID']);
-      var rows = rv.slice(1).filter(function(r){ return prodCol>=0 ? String(r[prodCol])===String(recipeId) : false; });
-      var ids = rows.map(function(r){ return String(useCol>=0 ? r[useCol] : (r[1]||'')); }).filter(Boolean);
-      if (ids.length) return ids;
+/**
+ * Resolve sheet by candidate names.
+ */
+function getSheet_(names) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  for (var i = 0; i < names.length; i++) {
+    const name = names[i];
+    try {
+      const sheet = ss.getSheetByName(name);
+      if (sheet) return sheet;
+    } catch (err) {
+      // ignore
     }
-  }
-  // Fallback to parts list
-  var parts = findSheet_(['Parts']);
-  if (!parts) return [];
-  var pv = parts.getDataRange().getValues();
-  if (pv.length < 2) return [];
-  var H = pv[0].map(String);
-  var prodCol = localGetHeaderIndex_(H, ['ProductID']);
-  var partCol = localGetHeaderIndex_(H, ['PartId']);
-  var rows = pv.slice(1).filter(function(r){ return prodCol<0 ? true : String(r[prodCol]) === String(recipeId); });
-  if (!rows.length) rows = pv.slice(1);
-  return rows.map(function(r){ return String(partCol>=0 ? r[partCol] : r[0]); }).filter(Boolean);
-}
-
-// --- Overrides for Progress + picking flows (English/Japanese sheet+header support) ---
-function _sheet_(names){
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  for (var i=0;i<names.length;i++){
-    try{ var sh = ss.getSheetByName(names[i]); if (sh) return sh; }catch(_){ }
   }
   return null;
 }
 
-function _progressSheet_(){
-  var sh = _sheet_(['Progress']);
-  if (!sh){
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    sh = ss.insertSheet('Progress');
-    sh.getRange('A1').setValue('Status');
-    sh.getRange('B1').setValue('PartID');
-    sh.getRange('C1').setValue('FancyID');
-    sh.getRange('D1').setValue('RecipeID');
-    sh.getRange('E1').setValue('LastUpdate');
-  }
-  return sh;
-}
-
-function startPickingWithProduct(id){
-  var sh = _progressSheet_();
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var products = _sheet_(['Products']);
-  var recipeId = String(id);
-  try{
-    if (products){
-      var mv = products.getDataRange().getValues();
-      if (mv.length>1){
-        var H = mv[0].map(String);
-        var fancyIdx  = localGetHeaderIndex_(H, ['FancyID']);
-        var recipeIdx = localGetHeaderIndex_(H, ['RecipeID']);
-        var row = mv.slice(1).find(function(r){ return String(r[fancyIdx>=0?fancyIdx:0])===String(id); });
-        if (row && recipeIdx>=0) recipeId = String(row[recipeIdx]||id);
-      }
-    }
-  }catch(_){ }
-
-  var list = getPartsListFor_(recipeId);
-  var first = list.length ? list[0] : '';
-  sh.getRange('A2').setValue('進行中');
-  sh.getRange('C2').setValue(id);
-  sh.getRange('D2').setValue(recipeId);
-  if (first) sh.getRange('B2').setValue(first);
-  sh.getRange('E2').setValue(new Date());
-
-  // Update Products (ProgPartID/LastUpdate) if columns exist
-  try{
-    if (products){
-      var mv = products.getDataRange().getValues();
-      if (mv.length>1){
-        var H = mv[0].map(String);
-        var fancyIdx = localGetHeaderIndex_(H, ['FancyID']);
-        var progIdx  = localGetHeaderIndex_(H, ['ProgPartID']);
-        var tsIdx    = localGetHeaderIndex_(H, ['LastUpdate']);
-        var rowIdx = 1 + mv.slice(1).findIndex(function(r){ return String(r[fancyIdx>=0?fancyIdx:0])===String(id); });
-        if (rowIdx>0){
-          if (progIdx>=0) products.getRange(rowIdx+1, progIdx+1).setValue(first||'');
-          if (tsIdx>=0)   products.getRange(rowIdx+1, tsIdx+1).setValue(new Date());
-        }
-      }
-    }
-  }catch(_){ }
-}
-
-function nextPart(){
-  var sh = _progressSheet_();
-  var recipeId = String(sh.getRange('D2').getValue()||'');
-  var cur = String(sh.getRange('B2').getValue()||'');
-  var list = getPartsListFor_(recipeId);
-  if (!list.length) return;
-  var idx = Math.max(0, list.indexOf(cur));
-  var next = list[Math.min(idx+1, list.length-1)];
-  sh.getRange('B2').setValue(next);
-  sh.getRange('E2').setValue(new Date());
-}
-
-function pausePicking(){
-  var sh = _progressSheet_();
-  sh.getRange('A2').setValue('一時停止');
-  sh.getRange('E2').setValue(new Date());
-}
-
-// Final override: build snapshot from your actual sheets
-function getPickingSnapshotFixed_(id){
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-
-  // Products → name
-  var products = _sheet_(['Products']);
-  var name = '';
-  try{
-    if (products){
-      var mv = products.getDataRange().getValues();
-      if (mv.length>1){
-        var H = mv[0].map(String);
-        var fancyIdx = localGetHeaderIndex_(H, ['FancyID']);
-        var nameIdx  = localGetHeaderIndex_(H, ['ProductName']);
-        var row = mv.slice(1).find(function(r){ return String(r[fancyIdx>=0?fancyIdx:0])===String(id); });
-        if (row) name = String(row[nameIdx>=0?nameIdx:1]||'');
-      }
-    }
-  }catch(_){ }
-
-  // Progress → current part and recipe
-  var prog = _progressSheet_();
-  var partId = prog ? String(prog.getRange('B2').getValue()||'') : '';
-  var modelId = prog ? String(prog.getRange('D2').getValue()||'') : '';
-
-  // Part/Parts → details
-  var parts = _sheet_(['Parts']);
-  var partName='', qty='', img='';
-  if (parts){
-    var pv = parts.getDataRange().getValues();
-    if (pv.length>1){
-      var H = pv[0].map(String);
-      var prodCol = localGetHeaderIndex_(H, ['ProductID']);
-      var partCol = localGetHeaderIndex_(H, ['PartID']);
-      var nameCol = localGetHeaderIndex_(H, ['PartName']);
-      var imgCol  = localGetHeaderIndex_(H, ['ImageURL']);
-      var qtyCol  = localGetHeaderIndex_(H, ['Qty']);
-      var list = pv.slice(1).filter(function(x){ return prodCol>=0 ? String(x[prodCol]) === (modelId||id) : true; });
-      if (!list.length) list = pv.slice(1);
-      var hit  = list.find(function(x){ return partCol>=0 ? String(x[partCol])===partId : false; }) || list[0];
-      if (hit){
-        partName = nameCol>=0? String(hit[nameCol]||''):'';
-        qty      = qtyCol>=0?  String(hit[qtyCol]||''):'';
-        img      = imgCol>=0?  String(hit[imgCol]||''):'';
-        if (!partId && partCol>=0) partId = String(hit[partCol]||'');
-      }
-    }
-  }
-  return { id:id, name:name, partId:partId, partName:partName, qty:qty, img:img };
-}
-function startPickingWithProduct(id){
-  const sh = ensureProgressSheet_();
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  // FancyID -> レシピID を Productsから解決
-  let recipeId = '';
-  try{
-    const manage = ss.getSheetByName('Products');
-    if (manage){
-      const mv = manage.getDataRange().getValues();
-      if (mv.length>1){
-        const H = mv[0].map(String);
-        const fancyIdx = localGetHeaderIndex_(H, ['FancyID']);
-        const recipeIdx = localGetHeaderIndex_(H, ['RecipeID']);
-        const row = mv.slice(1).find(r => String(r[fancyIdx>=0?fancyIdx:0]) === String(id));
-        if (row && recipeIdx>=0) recipeId = String(row[recipeIdx]||'');
-      }
-    }
-  }catch(_){ }
-  if (!recipeId) recipeId = String(id); // 最低限のフォールバック
-
-  const list = getPartsListFor_(recipeId);
-  const first = list.length ? list[0] : '';
-  sh.getRange('A2').setValue('進行中');
-  sh.getRange('C2').setValue(id);
-  sh.getRange('D2').setValue(recipeId);
-  if (first) sh.getRange('B2').setValue(first);
-  sh.getRange('E2').setValue(new Date());
-  // Productsの進捗PartIDも同期
-  try{
-    const manage = ss.getSheetByName('Products');
-    if (manage){
-      const mv = manage.getDataRange().getValues();
-      if (mv.length>1){
-        const H = mv[0].map(String);
-        const fancyIdx = localGetHeaderIndex_(H, ['FancyID']);
-        const progIdx  = localGetHeaderIndex_(H, ['ProgPartID']);
-        const tsIdx    = localGetHeaderIndex_(H, ['LastUpdate']);
-        const rowIdx = 1 + mv.slice(1).findIndex(r => String(r[fancyIdx>=0?fancyIdx:0])===String(id));
-        if (rowIdx>0){
-          if (progIdx>=0) manage.getRange(rowIdx+1, progIdx+1).setValue(first||'');
-          if (tsIdx>=0) manage.getRange(rowIdx+1, tsIdx+1).setValue(new Date());
-        }
-      }
-    }
-  }catch(_){ }
-  try{ logInfo_('startPickingWithProduct', { id, recipeId, first }); }catch(_){ }
-}
-function nextPart(){
-  const sh = ensureProgressSheet_();
-  const recipeId = String(sh.getRange('D2').getValue()||'');
-  const cur = String(sh.getRange('B2').getValue()||'');
-  const list = getPartsListFor_(recipeId);
-  if (!list.length) return;
-  const idx = Math.max(0, list.indexOf(cur));
-  const next = list[Math.min(idx+1, list.length-1)];
-  sh.getRange('B2').setValue(next);
-  sh.getRange('E2').setValue(new Date());
-  try{ logInfo_('nextPart', { recipeId, from: cur, to: next, total: list.length }); }catch(_){ }
-}
-function pausePicking(){
-  const sh = ensureProgressSheet_();
-  sh.getRange('A2').setValue('中断');
-  sh.getRange('E2').setValue(new Date());
-  try{ logInfo_('pausePicking', { status: '中断' }); }catch(_){ }
-}
-function nextPartAndGetSnapshot(id){ if (typeof nextPart === 'function') nextPart(); return getPickingSnapshot_(id); }
-
-// Header name resolver (active)
-function localGetHeaderIndex_(headerRow, names){
-  var norm = function(s){ return String(s).normalize('NFKC').replace(/\s+/g,'').toLowerCase(); };
-  var arr = (headerRow||[]).map(norm);
-  for (var i=0;i<names.length;i++){
-    var idx = arr.indexOf(norm(names[i]));
+/**
+ * Normalize header row search.
+ */
+function getHeaderIndex_(headerRow, candidates) {
+  if (!headerRow || !headerRow.length) return -1;
+  const normalized = headerRow.map(function (value) { return normalizeHeader_(value); });
+  for (var i = 0; i < candidates.length; i++) {
+    const target = normalizeHeader_(candidates[i]);
+    const idx = normalized.indexOf(target);
     if (idx >= 0) return idx;
   }
   return -1;
 }
 
-// Clean snapshot helper using sheet/header Japanese names
-function getPickingSnapshotFixed_(id){
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  // 製品名（任意）
-  const manageCandidates = ['Products'];
-  let manage = null;
-  for (var i=0;i<manageCandidates.length;i++){ manage = ss.getSheetByName(manageCandidates[i]); if (manage) break; }
-  const rows = manage ? manage.getDataRange().getValues() : [];
-  var name=''; var r = rows.find(function(x){ return String(x[0])===String(id); }); if (r) name = String(r[1]||'');
-
-  // 進行シート
-  const prog = ss.getSheetByName('Progress');
-  let partId = prog ? String(prog.getRange('B2').getValue()||'') : '';
-  const modelId = prog ? String(prog.getRange('D2').getValue()||'') : '';
-
-  // 部品一覧
-  const partsCandidates = ['Parts'];
-  let parts = null;
-  for (var j=0;j<partsCandidates.length;j++){ parts = ss.getSheetByName(partsCandidates[j]); if (parts) break; }
-  var partName='', qty='', img='';
-  if (parts){
-    const pv = parts.getDataRange().getValues();
-    if (pv.length>1){
-      const H = pv[0].map(String);
-      const prodCol = localGetHeaderIndex_(H, ['ProductID']);
-      const partCol = localGetHeaderIndex_(H, ['PartID']);
-      const nameCol = localGetHeaderIndex_(H, ['PartName']);
-      const imgCol  = localGetHeaderIndex_(H, ['ImageURL']);
-      const qtyCol  = localGetHeaderIndex_(H, ['Qty']);
-      let list = pv.slice(1).filter(function(x){ return prodCol>=0 ? String(x[prodCol]) === (modelId||id) : true; });
-      if (!list.length) { list = pv.slice(1); }
-      const hit  = list.find(function(x){ return partCol>=0 ? String(x[partCol])===partId : false; }) || list[0];
-      if (hit){
-        partName = nameCol>=0? String(hit[nameCol]||''):'';
-        qty      = qtyCol>=0?  String(hit[qtyCol]||''):'';
-        img      = imgCol>=0?  String(hit[imgCol]||''):'';
-        if (!partId && partCol>=0) { try{ partId = String(hit[partCol]||''); logInfo_('snapshot:fillPartId', { from:'partsSheet', partId: partId }); }catch(_){ partId = String(hit[partCol]||''); }
-        }
-      }
-    }
-  }
-  try{
-    logInfo_('snapshot:calc', { id:id, modelId:modelId, partId:partId, partName:partName, qty:qty, hasImg: !!img });
-  }catch(_){ }
-  return { id:id, name:name, partId:partId, partName:partName, qty:qty, img:img };
+function normalizeHeader_(value) {
+  return String(value || '')
+    .trim()
+    .normalize('NFKC')
+    .replace(/\s+/g, '')
+    .toLowerCase();
 }
 
-// --- Override with robust Japanese/English sheet+header handling ---
-// This redefinition takes precedence and fixes mojibake-related lookups.
-function findSheet_(names){
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  for (var i=0;i<names.length;i++){
-    try{ var sh = ss.getSheetByName(names[i]); if (sh) return sh; }catch(_){ }
-  }
-  return null;
+function cleanString_(value) {
+  return String(value || '').trim();
 }
 
-function getPickingSnapshotFixed_(id){
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+function idsEqual_(a, b) {
+  return normalizeId_(a) === normalizeId_(b);
+}
 
-  // Productsの候補
-  var manage = findSheet_(['Products']);
-  var name = '';
-  try{
-    if (manage){
-      var mv = manage.getDataRange().getValues();
-      if (mv.length>1){
-        var H = mv[0].map(String);
-        var idIdx   = localGetHeaderIndex_(H, ['FancyID']);
-        var nameIdx = localGetHeaderIndex_(H, ['ProductName']);
-        var row = mv.slice(1).find(function(r){ return String(r[idIdx>=0?idIdx:0])===String(id); });
-        if (row) name = String(row[nameIdx>=0?nameIdx:1]||'');
-      }
-    }
-  }catch(_){ }
+function normalizeId_(value) {
+  return String(value || '').trim().toLowerCase();
+}
 
-  // 進捗シート候補（既存名も含めて探す）
-  var prog = findSheet_(['Progress']);
-  var partId = prog ? String(prog.getRange('B2').getValue()||'') : '';
-  var modelId = prog ? String(prog.getRange('D2').getValue()||'') : '';
-
-  // Parts候補
-  var parts = findSheet_(['Parts']);
-  var partName='', qty='', img='';
-  if (parts){
-    var pv = parts.getDataRange().getValues();
-    if (pv.length>1){
-      var H = pv[0].map(String);
-      var prodCol = localGetHeaderIndex_(H, ['ProductID']);
-      var partCol = localGetHeaderIndex_(H, ['PartID']);
-      var nameCol = localGetHeaderIndex_(H, ['PartName']);
-      var imgCol  = localGetHeaderIndex_(H, ['ImageURL']);
-      var qtyCol  = localGetHeaderIndex_(H, ['Qty']);
-      var list = pv.slice(1).filter(function(x){ return prodCol>=0 ? String(x[prodCol]) === (modelId||id) : true; });
-      if (!list.length) list = pv.slice(1);
-      var hit  = list.find(function(x){ return partCol>=0 ? String(x[partCol])===partId : false; }) || list[0];
-      if (hit){
-        partName = nameCol>=0? String(hit[nameCol]||''):'';
-        qty      = qtyCol>=0?  String(hit[qtyCol]||''):'';
-        img      = imgCol>=0?  String(hit[imgCol]||''):'';
-        if (!partId && partCol>=0) partId = String(hit[partCol]||'');
-      }
-    }
-  }
-  try{ logInfo_('snapshot:calc:v2', { id:id, modelId:modelId, partId:partId, partName:partName, qty:qty, hasImg: !!img }); }catch(_){ }
-  return { id:id, name:name, partId:partId, partName:partName, qty:qty, img:img };
+function isTruthy_(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
 }

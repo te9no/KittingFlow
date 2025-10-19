@@ -16,6 +16,7 @@
     .card{ border:1px solid #ddd; border-radius:12px; padding:14px; margin-top:16px }
     img{ max-width:220px; max-height:220px; object-fit:contain; border:1px solid #eee }
     .muted{ color:#666; font-size:12px }
+    pre{ white-space:pre-wrap; word-break:break-word; font-family:Menlo,Consolas,"Courier New",monospace; font-size:12px; margin:8px 0 0 }
   </style>
 </head>
 <body>
@@ -44,14 +45,25 @@
 
   <p class="muted">バックエンド: Netlify Functions 経由で GAS /exec</p>
 
+  <div class="card muted" id="debugCard" style="display:none">
+    <div><b>Debug Log</b></div>
+    <pre id="debugLog"></pre>
+  </div>
+
   <script>
     const api = async (payload)=>{
       const res = await fetch('/.netlify/functions/api', {
         method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
       });
       const data = await res.json().catch(()=>({ok:false,error:'invalid json'}));
+      if(data._debug && data._debug.log){
+        console.debug('[GAS LOG]\n'+data._debug.log);
+        setDebugLog(data._debug.log);
+      }else{
+        setDebugLog('');
+      }
       if(!res.ok || !data.ok){ throw new Error(data.error || 'request failed'); }
-      if(data._debug&&data._debug.log){ console.debug('[GAS LOG]\n'+data._debug.log); } return data;
+      return data;
     };
     function getId(){
       const sel = document.getElementById('pidSel');
@@ -66,6 +78,18 @@
       qs('v-part').textContent = partLine || '-';
       const img = qs('v-img');
       if(d.img){ img.src = d.img; img.style.display = 'block'; } else { img.removeAttribute('src'); img.style.display='none'; }
+    }
+    function setDebugLog(log){
+      const card = qs('debugCard');
+      const pre = qs('debugLog');
+      if(!card || !pre) return;
+      if(log){
+        pre.textContent = log;
+        card.style.display = 'block';
+      }else{
+        pre.textContent = '';
+        card.style.display = 'none';
+      }
     }
     async function doStart(){
       const id = getId(); if(!id){ alert('製品IDを選択してください'); return; }

@@ -1,3 +1,7 @@
 .clasp.json
 scripts/deploy-gas.js
 .gas-deploy.json
+src_old/appsscript.json
+src_old/label.js
+src_old/main.js
+src_old/webapp.js

@@ -16,17 +16,17 @@
   - ログは Logger と（任意で）スプレッドシートへ記録可能
 
 シート構造（推奨名称とヘッダ）
-- 製品管理
-  - 例: [FancyID, 製品名, 状態, 登録日, 担当者, レシピID, 進捗部品ID, 最終更新]
+- Products
+  - 例: [FancyID, ProductName, Status, RegisterDate, Assigned, RecipeID, ProgPartID, LastUpdate]
   - FancyID からレシピIDを解決。進捗部品ID/最終更新を同期
-- 製品レシピ
-  - 例: [製品ID, 製品名, 使用部品ID, 使用数]
+- Recipe
+  - 例: [ProductID, ProductName, PartID, Qty]
   - 製品ID=レシピID の行から 使用部品ID を順序付きで取得（部品の並び順を制御可能）
-- 部品リスト
-  - 例: [部品ID, 製品ID, 部品名, 画像URL, 必要数, 在庫数, 単位, メモ]
+- Parts
+  - 例: [PartID, ProductID, PartName, ImageURL, Qty, InventoryNum, Unit, Memo]
   - 製品ID=レシピID で絞り込み。該当なし時は全件フォールバック
-- ピッキング進捗（自動作成）
-  - [ステータス, 部品ID, FancyID, レシピID, 最終更新]
+- Progress
+  - [Status, PartID, FancyID, RecipeID, LastUpdate]
   - 開始/次へ/中断で更新。
 
 実装済みアクション（GAS doPost）
