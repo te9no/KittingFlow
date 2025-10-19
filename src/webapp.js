@@ -157,6 +157,10 @@ function renderMenu_(){
   h += '<button onclick="(function(){var v=document.getElementById(\'resumeId\').value.trim(); if(!v){alert(\'ProductIDを入力\');return;} try{ top.location.href=\''+base+'?id=\'+encodeURIComponent(v);}catch(e){ location.href=\''+base+'?id=\'+encodeURIComponent(v);} })()">▶ 再開</button>';
   h += '<script>try{ if (top !== self) top.location.href = location.href; }catch(e){}</script>';
   h += '<div class="note">ブックマークしてiPadホームに追加すると便利です。</div>';
+  h += debugFooterHtml_();
+  h += debugFooterHtml_();
+  h += debugFooterHtml_();
+  h += debugFooterHtml_();
   h += '</body></html>';
   return h;
 }
@@ -179,7 +183,10 @@ function renderStart_(){
   h += 'r(data);document.getElementById(\'q\').oninput=function(e){var q=e.target.value.toLowerCase(); r(data.filter(function(p){return (p.id+\" \"+(p.name||\"\")).toLowerCase().indexOf(q)>-1;}));};';
   h += 'document.getElementById(\'go\').onclick=function(){var id=sel.value;if(!id){alert(\'ProductIDを選択\');return;} google.script.run.withSuccessHandler(function(){ try{ top.location.href=\''+base+'?page=pick&id=\'+encodeURIComponent(id);}catch(e){ location.href=\''+base+'?page=pick&id=\'+encodeURIComponent(id);} }).startPickingWithProduct(id);};';
   h += '<script>try{ if (top !== self) top.location.href = location.href; }catch(e){}</script>';
-  h += '</script></body></html>';
+  h += '</script>';
+  h += debugFooterHtml_();
+  h += debugFooterHtml_();
+  h += '</body></html>';
   return h;
 }
 
@@ -222,7 +229,9 @@ function renderPick_(id){
   h += 'document.getElementById(\'next\').onclick=function(){ if(!window.google||!google.script||!google.script.run){alert(\'実行環境エラー\');return;} google.script.run.withFailureHandler(function(e){alert(\'エラー: \'+(e&&e.message?e.message:e));}).withSuccessHandler(function(){location.href=\''+base+'?page=pick&id=\'+encodeURIComponent(v.id)+\'&t=\'+Date.now();}).nextPart();};';
   h += 'document.getElementById(\'pause\').onclick=function(){ if(!window.google||!google.script||!google.script.run){alert(\'実行環境エラー\');return;} google.script.run.withFailureHandler(function(e){alert(\'エラー: \'+(e&&e.message?e.message:e));}).withSuccessHandler(function(){alert(\'中断しました\');}).pausePicking();};';
   h += 'document.getElementById(\'label\').onclick=function(){ location.href=\''+base+'?page=label&id=\'+encodeURIComponent(v.id); };';
-  h += '</script></body></html>';
+  h += '</script>';
+  h += debugFooterHtml_();
+  h += '</body></html>';
   return h;
 }
 
@@ -328,6 +337,42 @@ function jsonResponse_(obj, debug){
   }catch(_){ }
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ----- Debug footer injection -----
+function debugFooterHtml_(){
+  try{
+    var css = '<style id="__dbg_css">'
+      + '#__dbg_wrap{position:fixed;left:0;right:0;bottom:0;background:rgba(0,0,0,.85);color:#fff;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;z-index:9999;box-shadow:0 -2px 6px rgba(0,0,0,.3)}'
+      + '#__dbg_bar{display:flex;align-items:center;gap:8px;padding:4px 8px;border-top:1px solid rgba(255,255,255,.15);background:rgba(30,30,30,.9)}'
+      + '#__dbg_bar b{font-size:12px;opacity:.8}'
+      + '#__dbg_toggle{margin-left:auto;color:#fff;background:transparent;border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:2px 6px;cursor:pointer}'
+      + '#__dbg_log{max-height:30vh;overflow:auto;padding:6px 8px;white-space:pre-wrap;word-break:break-word}'
+      + '#__dbg_wrap.min #__dbg_log{display:none}'
+      + '#__dbg_log .ln{opacity:.9}'
+      + '#__dbg_log .ln.warn{color:#ffd166}'
+      + '#__dbg_log .ln.error{color:#ff6b6b}'
+      + '</style>';
+    var html = ''
+      + '<div id="__dbg_wrap" class="min">'
+      + '  <div id="__dbg_bar"><b>Debug</b><span id="__dbg_status" style="opacity:.6"></span><button id="__dbg_toggle">Show</button></div>'
+      + '  <div id="__dbg_log"></div>'
+      + '</div>'
+      + '<script>(function(){try{'
+      + ' var wrap=document.getElementById("__dbg_wrap");'
+      + ' var logEl=document.getElementById("__dbg_log");'
+      + ' var btn=document.getElementById("__dbg_toggle");'
+      + ' var statusEl=document.getElementById("__dbg_status");'
+      + ' if(!wrap||!logEl||!btn){return;}'
+      + ' btn.onclick=function(){ if(wrap.classList.contains("min")){ wrap.classList.remove("min"); btn.textContent="Hide"; } else { wrap.classList.add("min"); btn.textContent="Show"; } };'
+      + ' function fmt(v){ try{ if(v===undefined) return "undefined"; if(v===null) return "null"; if(typeof v==="object") return JSON.stringify(v); return String(v); }catch(e){ return String(v); } }'
+      + ' function add(level,args){ try{ var line=document.createElement("div"); line.className="ln "+level; var ts=new Date().toLocaleTimeString(); line.textContent="["+ts+"] ["+level.toUpperCase()+"] "+[].map.call(args,fmt).join(" "); logEl.appendChild(line); logEl.scrollTop=logEl.scrollHeight; statusEl.textContent="("+level+")"; }catch(_){ } }'
+      + ' ["log","info","warn","error"].forEach(function(m){ var o=console[m]; console[m]=function(){ try{ add(m,arguments);}catch(_){ } try{ return o&&o.apply(console,arguments);}catch(e){ } }; });'
+      + ' window.addEventListener("error",function(e){ add("error", [e.message || "error", e.filename+":"+e.lineno]);});'
+      + ' window.__dbg = { add: add, el: logEl };'
+      + '}catch(_){}})();</script>';
+    return css + html;
+  }catch(_){ return ''; }
 }
 
 // ----- Picking state mutators -----
