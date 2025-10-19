@@ -20,14 +20,19 @@ exports.handler = async (event) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(bodyObj)
     });
-    const text = await res.text();
-    // GAS might return text/plain; pass through as JSON where possible
-    let body = text;
-    let headers = { 'Content-Type': 'application/json', ...corsHeaders() };
-    try { JSON.parse(text); } catch (_) { body = JSON.stringify({ ok: res.ok, data: text }); }
-    return { statusCode: res.ok ? 200 : 500, headers, body };
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    let payload;
+    if (ct.includes('application/json')) {
+      try { payload = await res.json(); } catch { payload = { ok: false, error: 'invalid-json-from-gas' }; }
+    } else {
+      const text = await res.text();
+      try { payload = JSON.parse(text); } catch { payload = { ok: res.ok, data: text }; }
+    }
+    // 常に200で返し、フロントは ok/stauts を見て処理（CORSやブラウザ差異を避ける）
+    return { statusCode: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders() }, body: JSON.stringify({ status: res.status, ...payload }) };
   } catch (err) {
-    return json({ ok: false, error: String(err) }, 500);
+    // ここも200で返す（デバッグしやすいようにメッセージを含める）
+    return json({ ok: false, error: String(err) });
   }
 };
 
