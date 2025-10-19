@@ -4,7 +4,7 @@ export default function LoginButton({ onLogin }) {
   useEffect(() => {
     if (!window.google) return;
     window.google.accounts.id.initialize({
-      client_id: "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com", // Google Cloud Consoleで発行したもの
+      client_id: "508417461343-rclvii4ffqdb8udj1h953776q49idob5.apps.googleusercontent.com", // Google Cloud Consoleで発行したもの
       callback: (res) => onLogin(res.credential)
     });
     window.google.accounts.id.renderButton(
