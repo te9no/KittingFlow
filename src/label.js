@@ -1,5 +1,12 @@
+function getManageSheet_(){
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const names = ['製品管理','管理','Manage','Products'];
+  for (var i=0;i<names.length;i++){ var sh = ss.getSheetByName(names[i]); if (sh) return sh; }
+  return null;
+}
+
 function printFancyLabelQR(id) {
-  const manage = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('製品管理');
+  const manage = getManageSheet_();
   if (!id && manage) id = manage.getRange(manage.getLastRow(), 1).getValue();
   const webAppUrl = ScriptApp.getService().getUrl();
   const target = webAppUrl ? `${webAppUrl}?id=${id}` : String(id);
@@ -15,7 +22,7 @@ function printFancyLabelQR(id) {
 function printPhomemoLabel(productId, opts) {
   const o = Object.assign({ widthMm: 40, heightMm: 30, marginMm: 2, showName: true }, opts || {});
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const manage = ss.getSheetByName('製品管理');
+  const manage = getManageSheet_();
   let name = '';
   if (manage) {
     const rows = manage.getDataRange().getValues();

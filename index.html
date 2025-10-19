@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ja">
 <head>
   <meta charset="utf-8">
@@ -22,27 +22,27 @@
   <h1>KittingFlow</h1>
   <div class="row">
     <select id="pidSel" disabled>
-      <option>隱ｭ縺ｿ霎ｼ縺ｿ荳ｭ...</option>
+      <option>読み込み中...</option>
     </select>
-    <button id="reload">蜀崎ｪｭ霎ｼ</button>
+    <button id="reload">再読込</button>
   </div>
   <div class="row">
-    <button id="start">髢句ｧ・/button>
-    <button id="snapshot">迴ｾ蝨ｨ縺ｮ迥ｶ諷・/button>
+    <button id="start">開始</button>
+    <button id="snapshot">現在の状況</button>
   </div>
 
   <div class="card" id="view" style="display:none">
-    <div><b>陬ｽ蜩！D:</b> <span id="v-id"></span></div>
-    <div><b>陬ｽ蜩∝錐:</b> <span id="v-name"></span></div>
-    <div style="margin-top:6px"><b>驛ｨ蜩・</b> <span id="v-part"></span></div>
+    <div><b>製品ID:</b> <span id="v-id"></span></div>
+    <div><b>製品名:</b> <span id="v-name"></span></div>
+    <div style="margin-top:6px"><b>部品:</b> <span id="v-part"></span></div>
     <div style="margin-top:6px"><img id="v-img" alt="" /></div>
     <div class="row">
-      <button id="next">谺｡縺ｸ 笆ｶ</button>
-      <button id="pause">竢ｸ 荳ｭ譁ｭ</button>
+      <button id="next">次へ ▶</button>
+      <button id="pause">⏸ 中断</button>
     </div>
   </div>
 
-  <p class="muted">繝舌ャ繧ｯ繧ｨ繝ｳ繝・ Netlify Functions 竊・GAS /exec</p>
+  <p class="muted">バックエンド: Netlify Functions 経由で GAS /exec</p>
 
   <script>
     const api = async (payload)=>{
@@ -62,30 +62,30 @@
       qs('view').style.display = 'block';
       qs('v-id').textContent = d.id || '';
       qs('v-name').textContent = d.name || '';
-      const partLine = (d.partId||'') + (d.partName?(' / '+d.partName):'') + (d.qty?(' / 蠢・ｦ∵焚 '+d.qty):'');
+      const partLine = (d.partId||'') + (d.partName?(' / '+d.partName):'') + (d.qty?(' / 必要数 '+d.qty):'');
       qs('v-part').textContent = partLine || '-';
       const img = qs('v-img');
       if(d.img){ img.src = d.img; img.style.display = 'block'; } else { img.removeAttribute('src'); img.style.display='none'; }
     }
     async function doStart(){
-      const id = getId(); if(!id){ alert('陬ｽ蜩！D繧帝∈謚槭＠縺ｦ縺上□縺輔＞'); return; }
+      const id = getId(); if(!id){ alert('製品IDを選択してください'); return; }
       try{ const {data} = await api({action:'start', id}); setView(data); }
-      catch(e){ alert('繧ｨ繝ｩ繝ｼ: '+e.message); }
+      catch(e){ alert('エラー: '+e.message); }
     }
     async function doSnapshot(){
-      const id = getId(); if(!id){ alert('陬ｽ蜩！D繧帝∈謚槭＠縺ｦ縺上□縺輔＞'); return; }
+      const id = getId(); if(!id){ alert('製品IDを選択してください'); return; }
       try{ const {data} = await api({action:'snapshot', id}); setView(data); }
-      catch(e){ alert('繧ｨ繝ｩ繝ｼ: '+e.message); }
+      catch(e){ alert('エラー: '+e.message); }
     }
     async function doNext(){
-      const id = getId(); if(!id){ alert('陬ｽ蜩！D繧帝∈謚槭＠縺ｦ縺上□縺輔＞'); return; }
+      const id = getId(); if(!id){ alert('製品IDを選択してください'); return; }
       try{ const {data} = await api({action:'next', id}); setView(data); }
-      catch(e){ alert('繧ｨ繝ｩ繝ｼ: '+e.message); }
+      catch(e){ alert('エラー: '+e.message); }
     }
     async function doPause(){
-      const id = getId(); if(!id){ alert('陬ｽ蜩！D繧帝∈謚槭＠縺ｦ縺上□縺輔＞'); return; }
-      try{ await api({action:'pause', id}); alert('荳ｭ譁ｭ縺励∪縺励◆'); }
-      catch(e){ alert('繧ｨ繝ｩ繝ｼ: '+e.message); }
+      const id = getId(); if(!id){ alert('製品IDを選択してください'); return; }
+      try{ await api({action:'pause', id}); alert('中断しました'); }
+      catch(e){ alert('エラー: '+e.message); }
     }
     async function loadList(){
       try{
@@ -93,7 +93,7 @@
         const sel = qs('pidSel');
         sel.innerHTML = '';
         if(!Array.isArray(data) || data.length===0){
-          const op = document.createElement('option'); op.textContent='陬ｽ蜩√′縺ゅｊ縺ｾ縺帙ｓ'; op.value=''; sel.appendChild(op); sel.disabled=true; return;
+          const op = document.createElement('option'); op.textContent='製品がありません'; op.value=''; sel.appendChild(op); sel.disabled=true; return;
         }
         data.forEach((x)=>{
           const op = document.createElement('option');
@@ -101,7 +101,7 @@
         });
         sel.disabled = false;
       }catch(e){
-        alert('繧ｨ繝ｩ繝ｼ: '+e.message);
+        alert('エラー: '+e.message);
       }
     }
     qs('start').onclick = doStart;
@@ -109,10 +109,10 @@
     qs('next').onclick = doNext;
     qs('pause').onclick = doPause;
     qs('reload').onclick = loadList;
-    // id繧ｯ繧ｨ繝ｪ縺後≠繧後・閾ｪ蜍戊｡ｨ遉ｺ
+    // idクエリがあれば自動表示
     const m = location.search.match(/id=([^&]+)/);
     if(m){
-      // 繧ｯ繧ｨ繝ｪ蜆ｪ蜈・ 繧ｻ繝ｬ繧ｯ繝医↓蟄伜惠縺吶ｌ縺ｰ驕ｸ謚槭＠縺ｦ陦ｨ遉ｺ縲√↑縺代ｌ縺ｰ繝ｪ繧ｹ繝亥ｾ後↓陦ｨ遉ｺ
+      // クエリ優先: セレクトに存在すれば選択して表示、なければリスト後に表示
       const desired = decodeURIComponent(m[1]);
       loadList().then(()=>{
         const sel = qs('pidSel');
@@ -125,4 +125,3 @@
   </script>
 </body>
 </html>
-

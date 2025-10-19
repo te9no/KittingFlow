@@ -330,18 +330,33 @@ function jsonResponse_(obj, debug){
 // ----- Picking state mutators -----
 function ensureProgressSheet_(){
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sh = ss.getSheetByName('ピッキング進行');
+  let sh = ss.getSheetByName('ピッキング進捗');
   if (!sh){
-    sh = ss.insertSheet('ピッキング進行');
+    sh = ss.insertSheet('ピッキング進捗');
     sh.getRange('A1').setValue('ステータス');
     sh.getRange('B1').setValue('部品ID');
-    sh.getRange('C1').setValue('製品ID');
-    sh.getRange('D1').setValue('モデルID');
+    sh.getRange('C1').setValue('FancyID');
+    sh.getRange('D1').setValue('レシピID');
+    sh.getRange('E1').setValue('最終更新');
   }
   return sh;
 }
-function getPartsListFor_(modelId){
+function getPartsListFor_(recipeId){
+  // Try 製品レシピ first (推奨)。なければ部品リストの製品IDでフォールバック
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const recipe = ss.getSheetByName('製品レシピ');
+  if (recipe){
+    const rv = recipe.getDataRange().getValues();
+    if (rv.length>1){
+      const H = rv[0].map(String);
+      const prodCol = localGetHeaderIndex_(H, ['製品ID','ProductId','product_id']);
+      const useCol  = localGetHeaderIndex_(H, ['使用部品ID','UsedPartId','used_part_id','部品ID']);
+      const rows = rv.slice(1).filter(r => prodCol>=0 ? String(r[prodCol])===String(recipeId) : false);
+      const ids = rows.map(r => String(useCol>=0 ? r[useCol] : (r[1]||''))).filter(Boolean);
+      if (ids.length){ return ids; }
+    }
+  }
+  // fallback: 部品リストから製品IDで抽出
   const parts = ss.getSheetByName('部品リスト') || ss.getSheetByName('部品') || ss.getSheetByName('Parts');
   if (!parts) return [];
   const pv = parts.getDataRange().getValues();
@@ -349,10 +364,9 @@ function getPartsListFor_(modelId){
   const H = pv[0].map(String);
   const prodCol = localGetHeaderIndex_(H, ['製品ID','ProductId','product_id']);
   const partCol = localGetHeaderIndex_(H, ['部品ID','PartId','part_id']);
-  let rows = pv.slice(1).filter(r => prodCol<0 ? true : String(r[prodCol]) === String(modelId));
+  let rows = pv.slice(1).filter(r => prodCol<0 ? true : String(r[prodCol]) === String(recipeId));
   if (!rows.length) {
-    // Fallback: ignore model filter and take all rows
-    try{ logInfo_('parts:list:fallbackAll', { modelId }); }catch(_){ }
+    try{ logInfo_('parts:list:fallbackAll', { recipeId }); }catch(_){ }
     rows = pv.slice(1);
   }
   return rows.map(r => String(partCol>=0 ? r[partCol] : r[0])).filter(Boolean);
@@ -360,43 +374,66 @@ function getPartsListFor_(modelId){
 function startPickingWithProduct(id){
   const sh = ensureProgressSheet_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  // モデルIDは製品IDと同一で扱う（必要なら管理シートから変換）
-  let modelId = String(id);
+  // FancyID -> レシピID を 製品管理から解決
+  let recipeId = '';
   try{
     const manage = ss.getSheetByName('製品管理') || ss.getSheetByName('管理') || ss.getSheetByName('Manage') || ss.getSheetByName('Products');
     if (manage){
       const mv = manage.getDataRange().getValues();
       if (mv.length>1){
         const H = mv[0].map(String);
-        const idIdx = 0; // 製品IDは1列目想定
-        const modelIdx = localGetHeaderIndex_(H, ['レシピID','RecipeId','recipe_id','モデルID']);
-        const row = mv.slice(1).find(r => String(r[idIdx]) === String(id));
-        if (row && modelIdx>=0) modelId = String(row[modelIdx] || id);
+        const fancyIdx = localGetHeaderIndex_(H, ['FancyID','fancy_id','製品ID']);
+        const recipeIdx = localGetHeaderIndex_(H, ['レシピID','RecipeId','recipe_id']);
+        const row = mv.slice(1).find(r => String(r[fancyIdx>=0?fancyIdx:0]) === String(id));
+        if (row && recipeIdx>=0) recipeId = String(row[recipeIdx]||'');
       }
     }
   }catch(_){ }
-  const list = getPartsListFor_(modelId);
+  if (!recipeId) recipeId = String(id); // 最低限のフォールバック
+
+  const list = getPartsListFor_(recipeId);
   const first = list.length ? list[0] : '';
-  sh.getRange('A2').setValue('開始');
+  sh.getRange('A2').setValue('進行中');
   sh.getRange('C2').setValue(id);
-  sh.getRange('D2').setValue(modelId);
+  sh.getRange('D2').setValue(recipeId);
   if (first) sh.getRange('B2').setValue(first);
-  try{ logInfo_('startPickingWithProduct', { id, modelId, first }); }catch(_){ }
+  sh.getRange('E2').setValue(new Date());
+  // 製品管理の進捗部品IDも同期
+  try{
+    const manage = ss.getSheetByName('製品管理');
+    if (manage){
+      const mv = manage.getDataRange().getValues();
+      if (mv.length>1){
+        const H = mv[0].map(String);
+        const fancyIdx = localGetHeaderIndex_(H, ['FancyID','製品ID']);
+        const progIdx  = localGetHeaderIndex_(H, ['進捗部品ID']);
+        const tsIdx    = localGetHeaderIndex_(H, ['最終更新']);
+        const rowIdx = 1 + mv.slice(1).findIndex(r => String(r[fancyIdx>=0?fancyIdx:0])===String(id));
+        if (rowIdx>0){
+          if (progIdx>=0) manage.getRange(rowIdx+1, progIdx+1).setValue(first||'');
+          if (tsIdx>=0) manage.getRange(rowIdx+1, tsIdx+1).setValue(new Date());
+        }
+      }
+    }
+  }catch(_){ }
+  try{ logInfo_('startPickingWithProduct', { id, recipeId, first }); }catch(_){ }
 }
 function nextPart(){
   const sh = ensureProgressSheet_();
-  const modelId = String(sh.getRange('D2').getValue()||sh.getRange('C2').getValue()||'');
+  const recipeId = String(sh.getRange('D2').getValue()||'');
   const cur = String(sh.getRange('B2').getValue()||'');
-  const list = getPartsListFor_(modelId);
+  const list = getPartsListFor_(recipeId);
   if (!list.length) return;
   const idx = Math.max(0, list.indexOf(cur));
   const next = list[Math.min(idx+1, list.length-1)];
   sh.getRange('B2').setValue(next);
-  try{ logInfo_('nextPart', { modelId, from: cur, to: next, total: list.length }); }catch(_){ }
+  sh.getRange('E2').setValue(new Date());
+  try{ logInfo_('nextPart', { recipeId, from: cur, to: next, total: list.length }); }catch(_){ }
 }
 function pausePicking(){
   const sh = ensureProgressSheet_();
   sh.getRange('A2').setValue('中断');
+  sh.getRange('E2').setValue(new Date());
   try{ logInfo_('pausePicking', { status: '中断' }); }catch(_){ }
 }
 function nextPartAndGetSnapshot(id){ if (typeof nextPart === 'function') nextPart(); return getPickingSnapshot_(id); }
