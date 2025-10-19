@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+  <body style="font-family:sans-serif;padding:10px;">
+    <h3>⚙️ 設定</h3>
+    <label>許可ユーザー (カンマ区切り):</label><br>
+    <input id="users" style="width:100%" /><br><br>
+
+    <label>在庫アラート閾値:</label><br>
+    <input id="threshold" type="number" /><br><br>
+
+    <label>ラベルIDプレフィックス:</label><br>
+    <input id="prefix" /><br><br>
+
+    <button onclick="save()">💾 保存</button>
+
+    <script>
+      google.script.run.withSuccessHandler(data => {
+        document.getElementById('users').value = data.ALLOWED_USERS || '';
+        document.getElementById('threshold').value = data.ALERT_THRESHOLD || '';
+        document.getElementById('prefix').value = data.LABEL_PREFIX || '';
+      }).getSettings();
+
+      function save() {
+        const settings = {
+          ALLOWED_USERS: document.getElementById('users').value,
+          ALERT_THRESHOLD: document.getElementById('threshold').value,
+          LABEL_PREFIX: document.getElementById('prefix').value
+        };
+        google.script.run.withSuccessHandler(() => {
+          alert('設定を保存しました！');
+        }).saveSettings(settings);
+      }
+    </script>
+  </body>
+</html>
