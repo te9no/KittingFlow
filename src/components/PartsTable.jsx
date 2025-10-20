@@ -28,7 +28,6 @@ export default function PartsTable() {
           <tr>
             <th style={{textAlign:'left', padding:'8px'}}>部品ID</th>
             <th style={{textAlign:'left', padding:'8px'}}>部品名</th>
-            <th style={{textAlign:'right', padding:'8px'}}>必要数</th>
             <th style={{textAlign:'right', padding:'8px'}}>在庫</th>
             <th style={{padding:'8px'}}>操作</th>
           </tr>
@@ -38,7 +37,6 @@ export default function PartsTable() {
             <tr key={p.id} style={{borderTop:'1px solid #e5e7eb'}}>
               <td style={{padding:'8px'}}>{p.id}</td>
               <td style={{padding:'8px'}}>{p.name}</td>
-              <td style={{padding:'8px', textAlign:'right'}}>{p.qty}</td>
               <td style={{padding:'8px', textAlign:'right'}}>{p.stock}</td>
               <td style={{padding:'8px', textAlign:'center'}}>
                 {editing === p.id ? (
@@ -54,7 +52,7 @@ export default function PartsTable() {
             </tr>
           ))}
           {!parts.length && (
-            <tr><td colSpan="5" style={{padding:'12px', textAlign:'center', color:'#666'}}>データがありません。CSVをインポートしてください。</td></tr>
+            <tr><td colSpan="4" style={{padding:'12px', textAlign:'center', color:'#666'}}>データがありません。CSVをインポートしてください。</td></tr>
           )}
         </tbody>
       </table>
