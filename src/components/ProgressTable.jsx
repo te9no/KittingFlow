@@ -24,16 +24,66 @@ const modalStyle = {
   fontFamily: "Inter, system-ui, sans-serif"
 };
 
+const sorters = {
+  productId: (a, b) => a.productId.localeCompare(b.productId, "ja"),
+  productName: (a, b) => (a.productName || "").localeCompare(b.productName || "", "ja"),
+  state: (a, b) => (a.state || "").localeCompare(b.state || "", "ja"),
+  progress: (a, b) => {
+    const progressA = a.total ? (a.currentIndex + 1) / a.total : 0;
+    const progressB = b.total ? (b.currentIndex + 1) / b.total : 0;
+    return progressA - progressB;
+  }
+};
+
+function sortIndicator(active, direction) {
+  if (!active) return "";
+  return direction === "asc" ? " ▲" : " ▼";
+}
+
 export default function ProgressTable() {
   const [rows, setRows] = useState([]);
   const [qrTarget, setQrTarget] = useState(null);
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [qrLoading, setQrLoading] = useState(false);
   const [qrError, setQrError] = useState("");
+  const [sortKey, setSortKey] = useState("productId");
+  const [sortDir, setSortDir] = useState("asc");
 
   useEffect(() => {
     load();
   }, []);
+
+  async function load() {
+    const products = await db.products.toArray();
+    const list = [];
+    for (const product of products) {
+      const progress = await getProgress(product.id);
+      const parts = await getPartsForProduct(product.id);
+      list.push({
+        productId: product.id,
+        productName: product.name,
+        total: parts.length,
+        currentIndex: Number(progress.currentIndex ?? 0),
+        state: progress.state || STATE_READY
+      });
+    }
+    setRows(list);
+  }
+
+  function toggleSort(key) {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  const sortedRows = useMemo(() => {
+    const sorter = sorters[sortKey] || sorters.productId;
+    const list = [...rows].sort(sorter);
+    return sortDir === "asc" ? list : list.reverse();
+  }, [rows, sortKey, sortDir]);
 
   const operationsCellStyle = useMemo(
     () => ({
@@ -87,23 +137,6 @@ export default function ProgressTable() {
     () => ({ ...buttonStyles.danger(true), minWidth: 90, justifySelf: "end" }),
     []
   );
-
-  async function load() {
-    const products = await db.products.toArray();
-    const list = [];
-    for (const product of products) {
-      const progress = await getProgress(product.id);
-      const parts = await getPartsForProduct(product.id);
-      list.push({
-        productId: product.id,
-        productName: product.name,
-        total: parts.length,
-        currentIndex: Number(progress.currentIndex ?? 0),
-        state: progress.state || STATE_READY
-      });
-    }
-    setRows(list);
-  }
 
   async function reset(productId) {
     await setProgress(productId, { state: STATE_READY, currentIndex: 0 });
@@ -217,15 +250,43 @@ export default function ProgressTable() {
       <table style={{ width: "100%", borderCollapse: "collapse", background: "#fff", borderRadius: 8, overflow: "hidden" }}>
         <thead style={{ background: "#eef2f7" }}>
           <tr>
-            <th style={{ textAlign: "left", padding: 8 }}>製品ID</th>
-            <th style={{ textAlign: "left", padding: 8 }}>製品名</th>
-            <th style={{ textAlign: "center", padding: 8 }}>状態</th>
-            <th style={{ textAlign: "center", padding: 8 }}>工程</th>
+            <th style={{ textAlign: "left", padding: 8 }}>
+              <button
+                onClick={() => toggleSort("productId")}
+                style={{ border: "none", background: "transparent", cursor: "pointer", fontWeight: 600 }}
+              >
+                製品ID{sortIndicator(sortKey === "productId", sortDir)}
+              </button>
+            </th>
+            <th style={{ textAlign: "left", padding: 8 }}>
+              <button
+                onClick={() => toggleSort("productName")}
+                style={{ border: "none", background: "transparent", cursor: "pointer", fontWeight: 600 }}
+              >
+                製品名{sortIndicator(sortKey === "productName", sortDir)}
+              </button>
+            </th>
+            <th style={{ textAlign: "center", padding: 8 }}>
+              <button
+                onClick={() => toggleSort("state")}
+                style={{ border: "none", background: "transparent", cursor: "pointer", fontWeight: 600 }}
+              >
+                状態{sortIndicator(sortKey === "state", sortDir)}
+              </button>
+            </th>
+            <th style={{ textAlign: "center", padding: 8 }}>
+              <button
+                onClick={() => toggleSort("progress")}
+                style={{ border: "none", background: "transparent", cursor: "pointer", fontWeight: 600 }}
+              >
+                工程{sortIndicator(sortKey === "progress", sortDir)}
+              </button>
+            </th>
             <th style={{ padding: 8 }}>操作</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {sortedRows.map((row) => (
             <tr key={row.productId} style={{ borderTop: "1px solid #e5e7eb" }}>
               <td style={{ padding: 8 }}>{row.productId}</td>
               <td style={{ padding: 8 }}>{row.productName}</td>
@@ -233,9 +294,7 @@ export default function ProgressTable() {
               <td style={{ padding: 8, textAlign: "center" }}>
                 {row.total ? `${row.currentIndex + 1}/${row.total}` : "0/0"}
               </td>
-              <td
-                style={operationsCellStyle}
-              >
+              <td style={operationsCellStyle}>
                 <button
                   onClick={() => reset(row.productId)}
                   style={resetButtonStyle}
@@ -261,7 +320,7 @@ export default function ProgressTable() {
                   style={qrButtonStyle}
                   {...qrHoverHandlers}
                 >
-                  QR
+                  QRラベル
                 </button>
                 <button
                   onClick={() => remove(row.productId)}
@@ -273,7 +332,7 @@ export default function ProgressTable() {
               </td>
             </tr>
           ))}
-          {!rows.length && (
+          {!sortedRows.length && (
             <tr>
               <td colSpan={5} style={{ padding: 12, textAlign: "center", color: "#666" }}>
                 製品がありません。Products.csv を取り込んでください。

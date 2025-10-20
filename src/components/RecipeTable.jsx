@@ -2,23 +2,36 @@
 import { db } from "../db";
 import { buttonStyles, hoverStyles, createHoverHandlers } from "../styles/buttons";
 
-const TITLE = "\uD83D\uDCD8 \u30EC\u30B7\u30D4(\u88FD\u54C1\u2192\u90E8\u54C1\u306E\u5BFE\u5FDC)";
-const COLUMN_PRODUCT = "\u88FD\u54C1";
-const COLUMN_PART = "\u90E8\u54C1";
-const COLUMN_QTY = "\u6570\u91CF";
-const COLUMN_ACTION = "\u64CD\u4F5C";
-const EMPTY_MESSAGE = "\u30C7\u30FC\u30BF\u304C\u3042\u308A\u307E\u305B\u3093\u3002Recipe.csv \u3092\u30A4\u30F3\u30DD\u30FC\u30C8\u3057\u3066\u304F\u3060\u3055\u3044\u3002";
-const ADD_ROW_LABEL = "\u884C\u3092\u8FFD\u52A0";
-const SELECT_PRODUCT_LABEL = "\u88FD\u54C1\u3092\u9078\u629E";
-const SELECT_PART_LABEL = "\u90E8\u54C1\u3092\u9078\u629E";
-const ADD_BUTTON_LABEL = "\u8FFD\u52A0";
-const DELETE_BUTTON_LABEL = "\u524A\u9664";
+const TITLE = "📘 レシピ（製品→部品の対応）";
+const COLUMN_PRODUCT = "製品";
+const COLUMN_PART = "部品";
+const COLUMN_QTY = "数量";
+const COLUMN_ACTION = "操作";
+const EMPTY_MESSAGE = "データがありません。Recipe.csv をインポートしてください。";
+const ADD_ROW_LABEL = "レシピを追加";
+const SELECT_PRODUCT_LABEL = "製品を選択";
+const SELECT_PART_LABEL = "部品を選択";
+const ADD_BUTTON_LABEL = "追加";
+const DELETE_BUTTON_LABEL = "削除";
+
+const sorters = {
+  product: (a, b, productLabelFn) => productLabelFn(a).localeCompare(productLabelFn(b), "ja"),
+  part: (a, b, _, partLabelFn) => partLabelFn(a).localeCompare(partLabelFn(b), "ja"),
+  qty: (a, b) => Number(a.qty ?? 0) - Number(b.qty ?? 0)
+};
+
+function sortIndicator(active, direction) {
+  if (!active) return "";
+  return direction === "asc" ? " ▲" : " ▼";
+}
 
 export default function RecipeTable() {
   const [recipes, setRecipes] = useState([]);
   const [parts, setParts] = useState([]);
   const [products, setProducts] = useState([]);
   const [newRow, setNewRow] = useState({ productId: "", partId: "", qty: 1 });
+  const [sortKey, setSortKey] = useState("product");
+  const [sortDir, setSortDir] = useState("asc");
 
   useEffect(() => {
     load();
@@ -33,6 +46,15 @@ export default function RecipeTable() {
     setRecipes(recipeRows);
     setParts(partRows);
     setProducts(productRows);
+  }
+
+  function toggleSort(key) {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
   }
 
   const partMap = useMemo(() => {
@@ -51,13 +73,23 @@ export default function RecipeTable() {
     return { byId, byInternal };
   }, [products]);
 
-  const partName = id => partMap.get(id)?.name || id;
-  const productLabel = recipe => {
+  const partLabel = (recipe) => {
+    const p = partMap.get(recipe.partId);
+    return `${recipe.partId} - ${p?.name ?? recipe.partId}`;
+  };
+
+  const productLabel = (recipe) => {
     const byInternal = productMaps.byInternal.get(recipe.productId);
     const byId = productMaps.byId.get(recipe.productId);
     const name = recipe.productName || byInternal?.name || byId?.name || recipe.productId;
     return `${recipe.productId} - ${name}`;
   };
+
+  const sortedRecipes = useMemo(() => {
+    const sorter = sorters[sortKey] || sorters.product;
+    const list = [...recipes].sort((a, b) => sorter(a, b, productLabel, partLabel));
+    return sortDir === "asc" ? list : list.reverse();
+  }, [recipes, sortKey, sortDir]);
 
   async function saveQty(row, qty) {
     const value = Number(qty);
@@ -98,24 +130,111 @@ export default function RecipeTable() {
     () => createHoverHandlers(buttonStyles.danger, hoverStyles.danger, true),
     []
   );
+
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "16px" }}>
       <h3>{TITLE}</h3>
 
+      <div
+        style={{
+          marginBottom: 16,
+          background: "#fff",
+          border: "1px solid #e5e7eb",
+          borderRadius: 12,
+          padding: 16,
+          display: "grid",
+          gap: 12
+        }}
+      >
+        <b>{ADD_ROW_LABEL}</b>
+        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            製品
+            <select
+              value={newRow.productId}
+              onChange={(event) => setNewRow({ ...newRow, productId: event.target.value })}
+              style={{ padding: "6px 8px" }}
+            >
+              <option value="">{SELECT_PRODUCT_LABEL}</option>
+              {products.map((product) => (
+                <option key={product.id} value={product.id}>{`${product.id} - ${product.name}`}</option>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            部品
+            <select
+              value={newRow.partId}
+              onChange={(event) => setNewRow({ ...newRow, partId: event.target.value })}
+              style={{ padding: "6px 8px" }}
+            >
+              <option value="">{SELECT_PART_LABEL}</option>
+              {parts.map((part) => (
+                <option key={part.id} value={part.id}>{`${part.id} - ${part.name ?? part.id}`}</option>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            必要数量
+            <input
+              type="number"
+              min="1"
+              value={newRow.qty}
+              onChange={(event) => setNewRow({ ...newRow, qty: event.target.value })}
+              style={{ padding: "6px 8px" }}
+            />
+          </label>
+        </div>
+        <div>
+          <button
+            onClick={addRow}
+            style={addButtonStyle}
+            {...addHoverHandlers}
+            disabled={!canAdd}
+          >
+            {ADD_BUTTON_LABEL}
+          </button>
+        </div>
+      </div>
+
       <table style={{ width: "100%", borderCollapse: "collapse", background: "#fff", borderRadius: 8, overflow: "hidden" }}>
         <thead style={{ background: "#eef2f7" }}>
           <tr>
-            <th style={{ textAlign: "left", padding: "8px" }}>{COLUMN_PRODUCT}</th>
-            <th style={{ textAlign: "left", padding: "8px" }}>{COLUMN_PART}</th>
-            <th style={{ textAlign: "right", padding: "8px" }}>{COLUMN_QTY}</th>
+            <th style={{ textAlign: "left", padding: "8px" }}>
+              <button
+                onClick={() => toggleSort("product")}
+                style={{ border: "none", background: "transparent", cursor: "pointer", fontWeight: 600 }}
+              >
+                {COLUMN_PRODUCT}
+                {sortIndicator(sortKey === "product", sortDir)}
+              </button>
+            </th>
+            <th style={{ textAlign: "left", padding: "8px" }}>
+              <button
+                onClick={() => toggleSort("part")}
+                style={{ border: "none", background: "transparent", cursor: "pointer", fontWeight: 600 }}
+              >
+                {COLUMN_PART}
+                {sortIndicator(sortKey === "part", sortDir)}
+              </button>
+            </th>
+            <th style={{ textAlign: "right", padding: "8px" }}>
+              <button
+                onClick={() => toggleSort("qty")}
+                style={{ border: "none", background: "transparent", cursor: "pointer", fontWeight: 600 }}
+              >
+                {COLUMN_QTY}
+                {sortIndicator(sortKey === "qty", sortDir)}
+              </button>
+            </th>
             <th style={{ padding: "8px" }}>{COLUMN_ACTION}</th>
           </tr>
         </thead>
         <tbody>
-          {recipes.map((recipe) => (
+          {sortedRecipes.map((recipe) => (
             <tr key={recipe.id} style={{ borderTop: "1px solid #e5e7eb" }}>
               <td style={{ padding: "8px" }}>{productLabel(recipe)}</td>
-              <td style={{ padding: "8px" }}>{`${recipe.partId} - ${partName(recipe.partId)}`}</td>
+              <td style={{ padding: "8px" }}>{partLabel(recipe)}</td>
               <td style={{ padding: "8px", textAlign: "right" }}>
                 <input
                   type="number"
@@ -126,11 +245,13 @@ export default function RecipeTable() {
                 />
               </td>
               <td style={{ padding: "8px", textAlign: "center" }}>
-                <button onClick={() => removeRow(recipe.id)} style={buttonStyles.danger()} {...deleteHoverHandlers}>{DELETE_BUTTON_LABEL}</button>
+                <button onClick={() => removeRow(recipe.id)} style={buttonStyles.danger()} {...deleteHoverHandlers}>
+                  {DELETE_BUTTON_LABEL}
+                </button>
               </td>
             </tr>
           ))}
-          {!recipes.length && (
+          {!sortedRecipes.length && (
             <tr>
               <td colSpan={4} style={{ padding: "12px", textAlign: "center", color: "#666" }}>
                 {EMPTY_MESSAGE}
@@ -139,35 +260,6 @@ export default function RecipeTable() {
           )}
         </tbody>
       </table>
-
-      <div style={{ marginTop: 12, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: "12px" }}>
-        <b>{ADD_ROW_LABEL}</b>
-        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-          <select value={newRow.productId} onChange={(event) => setNewRow({ ...newRow, productId: event.target.value })}>
-            <option value="">{SELECT_PRODUCT_LABEL}</option>
-            {products.map((product) => (
-              <option key={product.id} value={product.id}>{`${product.id} - ${product.name}`}</option>
-            ))}
-          </select>
-          <select value={newRow.partId} onChange={(event) => setNewRow({ ...newRow, partId: event.target.value })}>
-            <option value="">{SELECT_PART_LABEL}</option>
-            {parts.map((part) => (
-              <option key={part.id} value={part.id}>{`${part.id} - ${part.name}`}</option>
-            ))}
-          </select>
-          <input
-            type="number"
-            min="1"
-            value={newRow.qty}
-            onChange={(event) => setNewRow({ ...newRow, qty: event.target.value })}
-            style={{ width: 100 }}
-          />
-          <button onClick={addRow} style={addButtonStyle} {...addHoverHandlers} disabled={!canAdd}>{ADD_BUTTON_LABEL}</button>
-        </div>
-      </div>
     </div>
   );
 }
-
-
-

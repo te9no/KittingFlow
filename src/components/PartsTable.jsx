@@ -2,12 +2,25 @@
 import { db } from "../db";
 import { buttonStyles, hoverStyles, createHoverHandlers } from "../styles/buttons";
 
+const sorters = {
+  id: (a, b) => a.id.localeCompare(b.id, "ja"),
+  name: (a, b) => (a.name || "").localeCompare(b.name || "", "ja"),
+  stock: (a, b) => Number(a.stock ?? 0) - Number(b.stock ?? 0)
+};
+
+function renderSortLabel(label, active, direction) {
+  if (!active) return label;
+  return `${label} ${direction === "asc" ? "▲" : "▼"}`;
+}
+
 export default function PartsTable() {
   const [parts, setParts] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [editValues, setEditValues] = useState({ stock: "", imageUrl: "" });
   const [newPart, setNewPart] = useState({ id: "", name: "", stock: "0", imageUrl: "" });
   const [feedback, setFeedback] = useState("");
+  const [sortKey, setSortKey] = useState("id");
+  const [sortDir, setSortDir] = useState("asc");
 
   useEffect(() => {
     load();
@@ -16,6 +29,21 @@ export default function PartsTable() {
   async function load() {
     setParts(await db.parts.toArray());
   }
+
+  function toggleSort(key) {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  const sortedParts = useMemo(() => {
+    const sorter = sorters[sortKey] || sorters.id;
+    const list = [...parts].sort(sorter);
+    return sortDir === "asc" ? list : list.reverse();
+  }, [parts, sortKey, sortDir]);
 
   async function updatePart(id) {
     const stockNumber = Number(editValues.stock);
@@ -161,15 +189,27 @@ export default function PartsTable() {
       <table style={{ width: "100%", borderCollapse: "collapse", background: "#fff", borderRadius: 8, overflow: "hidden" }}>
         <thead style={{ background: "#eef2f7" }}>
           <tr>
-            <th style={{ textAlign: "left", padding: "8px" }}>部品ID</th>
-            <th style={{ textAlign: "left", padding: "8px" }}>部品名</th>
+            <th style={{ textAlign: "left", padding: "8px" }}>
+              <button onClick={() => toggleSort("id")} style={{ border: "none", background: "transparent", cursor: "pointer", fontWeight: 600 }}>
+                {renderSortLabel("部品ID", sortKey === "id", sortDir)}
+              </button>
+            </th>
+            <th style={{ textAlign: "left", padding: "8px" }}>
+              <button onClick={() => toggleSort("name")} style={{ border: "none", background: "transparent", cursor: "pointer", fontWeight: 600 }}>
+                {renderSortLabel("部品名", sortKey === "name", sortDir)}
+              </button>
+            </th>
             <th style={{ textAlign: "center", padding: "8px" }}>画像</th>
-            <th style={{ textAlign: "right", padding: "8px" }}>在庫</th>
+            <th style={{ textAlign: "right", padding: "8px" }}>
+              <button onClick={() => toggleSort("stock")} style={{ border: "none", background: "transparent", cursor: "pointer", fontWeight: 600 }}>
+                {renderSortLabel("在庫", sortKey === "stock", sortDir)}
+              </button>
+            </th>
             <th style={{ padding: "8px" }}>操作</th>
           </tr>
         </thead>
         <tbody>
-          {parts.map((part) => (
+          {sortedParts.map((part) => (
             <tr key={part.id} style={{ borderTop: "1px solid #e5e7eb" }}>
               <td style={{ padding: "8px" }}>{part.id}</td>
               <td style={{ padding: "8px" }}>{part.name}</td>
@@ -208,11 +248,7 @@ export default function PartsTable() {
                       />
                     </label>
                     <div style={{ display: "flex", gap: 8 }}>
-                      <button
-                        onClick={() => updatePart(part.id)}
-                        style={updateButtonStyle}
-                        {...updateHoverHandlers}
-                      >
+                      <button onClick={() => updatePart(part.id)} style={updateButtonStyle} {...updateHoverHandlers}>
                         更新
                       </button>
                       <button
@@ -242,7 +278,7 @@ export default function PartsTable() {
               </td>
             </tr>
           ))}
-          {!parts.length && (
+          {!sortedParts.length && (
             <tr>
               <td colSpan={5} style={{ padding: "12px", textAlign: "center", color: "#666" }}>
                 部品がありません。Products.csv を取り込んでください。

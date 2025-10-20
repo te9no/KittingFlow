@@ -39,7 +39,7 @@ function App() {
 
   return (
     <div>
-      <header style={{ position: "sticky", top: 0, background: "#0f172a", color: "#fff", padding: "12px 16px" }}>
+      <header style={{ position: "sticky", top: 0, background: "#0f172a", color: "#fff", padding: "12px 16px", zIndex: 100, boxShadow: "0 4px 12px rgba(15, 23, 42, 0.25)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ fontWeight: 700 }}>KittingFlow Local Edition v1.2</div>
           <nav style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -52,7 +52,7 @@ function App() {
         </div>
       </header>
 
-      <main>
+      <main style={{ paddingTop: 16 }}>
         {tab === "picking" && <PickingUI />}
         {tab === "parts" && <PartsTable />}
         {tab === "recipes" && <RecipeTable />}
@@ -67,3 +67,4 @@ function App() {
 
 const root = createRoot(document.getElementById("root"));
 root.render(<App />);
+
