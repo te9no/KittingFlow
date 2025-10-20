@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import { db } from "../db";
+import { buttonStyles, hoverStyles, createHoverHandlers } from "../styles/buttons";
 
 const TITLE = "\uD83D\uDCD8 \u30EC\u30B7\u30D4(\u88FD\u54C1\u2192\u90E8\u54C1\u306E\u5BFE\u5FDC)";
 const COLUMN_PRODUCT = "\u88FD\u54C1";
@@ -87,6 +88,16 @@ export default function RecipeTable() {
     load();
   }
 
+  const canAdd = Boolean(newRow.productId && newRow.partId && Number(newRow.qty) > 0);
+  const addButtonStyle = useMemo(() => buttonStyles.primary(canAdd), [canAdd]);
+  const addHoverHandlers = useMemo(
+    () => createHoverHandlers(buttonStyles.primary, hoverStyles.primary, () => canAdd),
+    [canAdd]
+  );
+  const deleteHoverHandlers = useMemo(
+    () => createHoverHandlers(buttonStyles.danger, hoverStyles.danger, true),
+    []
+  );
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "16px" }}>
       <h3>{TITLE}</h3>
@@ -115,7 +126,7 @@ export default function RecipeTable() {
                 />
               </td>
               <td style={{ padding: "8px", textAlign: "center" }}>
-                <button onClick={() => removeRow(recipe.id)}>{DELETE_BUTTON_LABEL}</button>
+                <button onClick={() => removeRow(recipe.id)} style={buttonStyles.danger()} {...deleteHoverHandlers}>{DELETE_BUTTON_LABEL}</button>
               </td>
             </tr>
           ))}
@@ -151,9 +162,12 @@ export default function RecipeTable() {
             onChange={(event) => setNewRow({ ...newRow, qty: event.target.value })}
             style={{ width: 100 }}
           />
-          <button onClick={addRow}>{ADD_BUTTON_LABEL}</button>
+          <button onClick={addRow} style={addButtonStyle} {...addHoverHandlers} disabled={!canAdd}>{ADD_BUTTON_LABEL}</button>
         </div>
       </div>
     </div>
   );
 }
+
+
+
