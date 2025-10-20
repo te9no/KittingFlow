@@ -2,84 +2,88 @@ import Dexie from 'dexie';
 
 export let db;
 
-async function initDB() {
+function defineDB() {
+  db = new Dexie('kittingflow_local');
+  db.version(3).stores({
+    parts: 'id,name,stock,imageUrl',
+    recipes: '++id,productId,partId,qty,productName',
+    products: 'id,name,internalId,status',
+    progress: 'productId'
+  });
+  return db.open();
+}
+
+export async function initDB() {
   try {
-    db = new Dexie('kittingflow_local');
-    db.version(2).stores({
-      parts: 'id,name,stock,imageUrl',       // 主キー: id
-      recipes: '++id,productId,partId,qty',  // 自動ID
-      products: 'id,name,status',            // 主キー: id
-      progress: 'productId'                  // 主キー: productId
-    });
-    await db.open();
+    await defineDB();
   } catch (e) {
     if (e.name === 'UpgradeError') {
-      console.warn('Detected old DB schema — resetting...');
       await Dexie.delete('kittingflow_local');
-      // 再初期化
-      db = new Dexie('kittingflow_local');
-      db.version(2).stores({
-        parts: 'id,name,stock,imageUrl',
-        recipes: '++id,productId,partId,qty',
-        products: 'id,name,status',
-        progress: 'productId'
-      });
-      await db.open();
-    } else {
-      throw e;
-    }
+      await defineDB();
+    } else throw e;
   }
 }
-await initDB();
 
-// 初期サンプル投入（空のときのみ）
 export async function initSampleDataIfEmpty() {
+  if (!db?.isOpen()) await initDB();
   const count = await db.parts.count();
   if (count === 0) {
-    await db.transaction('rw', db.parts, db.recipes, db.products, db.progress, async () => {
+    await db.transaction('rw', db.parts, db.products, db.recipes, db.progress, async () => {
       await db.parts.bulkAdd([
-        { id: 'P001', name: 'MX Switch', stock: 500, imageUrl: '' },
-        { id: 'P002', name: 'Diode 1N4148', stock: 1000, imageUrl: '' },
-        { id: 'P003', name: 'TRRS Jack', stock: 120, imageUrl: '' }
+        { id: 'PCB001', name: 'PCB Board A', stock: 50 },
+        { id: 'PCB002', name: 'PCB Board B', stock: 40 }
       ]);
       await db.products.bulkAdd([
-        { id: 'PRD-001', name: '60% Keyboard', status: 'active' }
+        { id: 'MK-Delhi-Deer-SM63', name: 'TB', internalId: 'P001', status: 'active' }
       ]);
       await db.recipes.bulkAdd([
-        { productId: 'PRD-001', partId: 'P001', qty: 60 },
-        { productId: 'PRD-001', partId: 'P002', qty: 60 },
-        { productId: 'PRD-001', partId: 'P003', qty: 2 }
+        { productId: 'P001', productName: 'PCB', partId: 'PCB001', qty: 1 },
+        { productId: 'P001', productName: 'PCB', partId: 'PCB002', qty: 1 }
       ]);
-      await db.progress.put({ productId: 'PRD-001', state: '準備中', currentIndex: 0 });
+      await db.progress.put({ productId: 'MK-Delhi-Deer-SM63', state: '準備中', currentIndex: 0 });
     });
   }
 }
 
-// 進捗
-export async function getProgress(productId) {
-  const pr = await db.progress.get(productId);
-  if (!pr) return { productId, state: '準備中', currentIndex: 0 };
-  return { productId, state: pr.state ?? '準備中', currentIndex: Number(pr.currentIndex ?? 0) };
+export async function findInternalId(fancyId) {
+  if (!db?.isOpen()) await initDB();
+  const p = await db.products.get(fancyId);
+  return p?.internalId || fancyId;
 }
-export async function setProgress(productId, patch) {
-  const cur = await getProgress(productId);
-  await db.progress.put({ ...cur, ...patch, productId });
+export async function findFancyId(internalId) {
+  if (!db?.isOpen()) await initDB();
+  const list = await db.products.toArray();
+  const f = list.find(p => p.internalId === internalId);
+  return f?.id || internalId;
 }
 
-// 製品の部品一覧（JOIN）
 export async function getPartsForProduct(productId) {
+  if (!db?.isOpen()) await initDB();
+  const internal = await findInternalId(productId);
   const [recipes, parts] = await Promise.all([
-    db.recipes.where({ productId }).toArray(),
+    db.recipes.where({ productId: internal }).toArray(),
     db.parts.toArray()
   ]);
   const map = Object.fromEntries(parts.map(p => [p.id, p]));
   return recipes.map(r => ({
     id: r.id,
-    productId: r.productId,
     partId: r.partId,
+    productId: internal,
     qty: Number(r.qty),
     name: map[r.partId]?.name ?? r.partId,
     stock: Number(map[r.partId]?.stock ?? 0),
     imageUrl: map[r.partId]?.imageUrl ?? ''
   }));
+}
+
+export async function getProgress(productId) {
+  if (!db?.isOpen()) await initDB();
+  const pr = await db.progress.get(productId);
+  return pr || { productId, state: '準備中', currentIndex: 0 };
+}
+
+export async function setProgress(productId, patch) {
+  if (!db?.isOpen()) await initDB();
+  const cur = await getProgress(productId);
+  await db.progress.put({ ...cur, ...patch, productId });
 }
