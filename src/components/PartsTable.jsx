@@ -6,6 +6,8 @@ export default function PartsTable() {
   const [parts, setParts] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [editValues, setEditValues] = useState({ stock: "", imageUrl: "" });
+  const [newPart, setNewPart] = useState({ id: "", name: "", stock: "0", imageUrl: "" });
+  const [feedback, setFeedback] = useState("");
 
   useEffect(() => {
     load();
@@ -24,6 +26,39 @@ export default function PartsTable() {
     });
     setEditingId(null);
     setEditValues({ stock: "", imageUrl: "" });
+    setFeedback("部品を更新しました");
+    load();
+  }
+
+  async function addPart() {
+    const id = newPart.id.trim();
+    const name = newPart.name.trim();
+    const stockNumber = Number(newPart.stock);
+    if (!id) {
+      setFeedback("部品IDを入力してください");
+      return;
+    }
+    if (!name) {
+      setFeedback("部品名を入力してください");
+      return;
+    }
+    if (!Number.isFinite(stockNumber)) {
+      setFeedback("在庫には数値を入力してください");
+      return;
+    }
+    const exists = await db.parts.get(id);
+    if (exists) {
+      setFeedback("同じ部品IDが既に存在します");
+      return;
+    }
+    await db.parts.add({
+      id,
+      name,
+      stock: stockNumber,
+      imageUrl: newPart.imageUrl.trim()
+    });
+    setNewPart({ id: "", name: "", stock: "0", imageUrl: "" });
+    setFeedback("部品を追加しました");
     load();
   }
 
@@ -43,6 +78,14 @@ export default function PartsTable() {
     () => createHoverHandlers(buttonStyles.subtle, hoverStyles.subtle, true),
     []
   );
+  const addButtonStyle = useMemo(
+    () => buttonStyles.primary(Boolean(newPart.id.trim() && newPart.name.trim())),
+    [newPart.id, newPart.name]
+  );
+  const addHoverHandlers = useMemo(
+    () => createHoverHandlers(buttonStyles.primary, hoverStyles.primary, () => Boolean(newPart.id.trim() && newPart.name.trim())),
+    [newPart.id, newPart.name]
+  );
 
   const updateButtonStyle = buttonStyles.primary();
   const editButtonStyle = buttonStyles.subtle;
@@ -52,6 +95,69 @@ export default function PartsTable() {
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "16px" }}>
       <h3>部品一覧 / 在庫</h3>
+      <div
+        style={{
+          display: "grid",
+          gap: 12,
+          background: "#fff",
+          border: "1px solid #e5e7eb",
+          borderRadius: 12,
+          padding: 16,
+          marginBottom: 16
+        }}
+      >
+        <b>部品を追加</b>
+        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            部品ID
+            <input
+              value={newPart.id}
+              onChange={(event) => setNewPart((prev) => ({ ...prev, id: event.target.value }))}
+              placeholder="例: P001"
+              style={{ padding: "6px 8px" }}
+            />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            部品名
+            <input
+              value={newPart.name}
+              onChange={(event) => setNewPart((prev) => ({ ...prev, name: event.target.value }))}
+              placeholder="例: MX Switch"
+              style={{ padding: "6px 8px" }}
+            />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            在庫
+            <input
+              value={newPart.stock}
+              onChange={(event) => setNewPart((prev) => ({ ...prev, stock: event.target.value }))}
+              type="number"
+              min="0"
+              style={{ padding: "6px 8px" }}
+            />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            画像URL
+            <input
+              value={newPart.imageUrl}
+              onChange={(event) => setNewPart((prev) => ({ ...prev, imageUrl: event.target.value }))}
+              placeholder="https://..."
+              style={{ padding: "6px 8px" }}
+            />
+          </label>
+        </div>
+        <div>
+          <button
+            onClick={addPart}
+            style={addButtonStyle}
+            {...addHoverHandlers}
+            disabled={!(newPart.id.trim() && newPart.name.trim())}
+          >
+            追加
+          </button>
+        </div>
+      </div>
+
       <table style={{ width: "100%", borderCollapse: "collapse", background: "#fff", borderRadius: 8, overflow: "hidden" }}>
         <thead style={{ background: "#eef2f7" }}>
           <tr>
@@ -145,6 +251,7 @@ export default function PartsTable() {
           )}
         </tbody>
       </table>
+      {feedback && <p style={{ marginTop: 12, color: "#2563eb" }}>{feedback}</p>}
     </div>
   );
 }
