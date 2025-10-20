@@ -1,7 +1,7 @@
 {
   "name": "kittingflow-frontend",
-  "version": "2.0.0",
-  "description": "KittingFlow iPad版 (React + Google Login + GAS)",
+  "version": "3.0.0",
+  "description": "KittingFlow iPad Frontend (React + Google Login + GAS Backend)",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

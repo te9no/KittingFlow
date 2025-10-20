@@ -1,0 +1,4 @@
+シート構成の例:
+[部品リスト] 部品ID, 部品名, 画像URL, 必要数, 在庫
+[ピッキング進行] 状態, 現在の部品ID, 製品ID, 担当者
+[設定] 設定項目, 値 (ALLOWED_USERS / ALERT_THRESHOLD / LABEL_PREFIX)

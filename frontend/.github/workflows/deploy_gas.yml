@@ -1,0 +1,41 @@
+name: Deploy GAS via clasp
+on:
+  push:
+    branches: [ "main" ]
+jobs:
+  deploy-gas:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend_gas
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      - run: npm install -g @google/clasp
+      - name: Set up clasp credentials
+        run: |
+          mkdir -p ~/.clasprc.json.d
+          cat > ~/.clasprc.json << 'EOF'
+          {
+            "token": {
+              "access_token": "${{ secrets.GAS_ACCESS_TOKEN }}",
+              "refresh_token": "${{ secrets.GAS_REFRESH_TOKEN }}",
+              "scope": "https://www.googleapis.com/auth/script.projects https://www.googleapis.com/auth/script.deployments https://www.googleapis.com/auth/drive.file",
+              "token_type": "Bearer"
+            },
+            "oauth2ClientSettings": {
+              "clientId": "${{ secrets.GAS_CLIENT_ID }}",
+              "clientSecret": "${{ secrets.GAS_CLIENT_SECRET }}"
+            },
+            "isLocalCreds": true
+          }
+          EOF
+      - name: Inject scriptId
+        run: |
+          jq '.scriptId = "${{ secrets.GAS_SCRIPT_ID }}"' .clasp.json > .clasp.json.tmp && mv .clasp.json.tmp .clasp.json
+      - name: Push to Apps Script
+        run: clasp push
+      - name: Deploy new version
+        run: clasp deploy -d "CI auto deploy"

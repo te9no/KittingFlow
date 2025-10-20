@@ -5,104 +5,65 @@ export default function PickingView() {
   const [parts, setParts] = useState([]);
   const [progress, setProgress] = useState({});
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState("");
-  const [updating, setUpdating] = useState(false);
+  const [msg, setMsg] = useState("");
 
-  async function loadData() {
-    try {
-      const [partsResponse, progressResponse] = await Promise.all([getParts(), getProgress()]);
-      setParts(Array.isArray(partsResponse) ? partsResponse : []);
-      setProgress(progressResponse || {});
-    } catch (err) {
-      console.error(err);
-      setMessage("Failed to load picking data.");
-    } finally {
-      setLoading(false);
-    }
+  async function load() {
+    const [p, pr] = await Promise.all([getParts(), getProgress()]);
+    setParts(p);
+    setProgress(pr);
+    setLoading(false);
   }
 
   useEffect(() => {
-    loadData();
-    const intervalId = setInterval(loadData, 5000);
-    return () => clearInterval(intervalId);
+    load();
+    const interval = setInterval(load, 5000);
+    return () => clearInterval(interval);
   }, []);
 
-  if (loading) {
-    return <p>Loading...</p>;
-  }
+  if (loading) return <p>読み込み中...</p>;
 
-  if (!parts.length) {
-    return <p>No parts available.</p>;
-  }
-
-  const currentIndex = parts.findIndex(part => part["部品ID"] === progress["現在の部品ID"]);
-  const currentPart = currentIndex >= 0 ? parts[currentIndex] : parts[0];
+  const currentIndex = parts.findIndex(x => x["部品ID"] === progress["現在の部品ID"]);
+  const current = currentIndex >= 0 ? parts[currentIndex] : (parts[0] || {});
   const nextPart = currentIndex >= 0 ? parts[currentIndex + 1] : parts[1];
 
   async function handleNext() {
     if (!nextPart) {
-      setMessage("All parts are complete.");
+      setMsg("✅ すべて完了しました！");
       return;
     }
-
-    setUpdating(true);
-    try {
-      const result = await updateProgress(nextPart["部品ID"]);
-      setMessage(result);
-      await loadData();
-    } catch (err) {
-      console.error(err);
-      setMessage("Failed to update progress.");
-    } finally {
-      setUpdating(false);
-    }
+    const res = await updateProgress(nextPart["部品ID"]);
+    setMsg(res);
   }
 
   return (
     <div style={{ marginTop: "1.5rem" }}>
-      <h3>Picking Progress</h3>
-      <p>
-        <b>製品ID:</b> {progress["製品ID"] || "-"}
-      </p>
-      <p>
-        <b>状態:</b> {progress["状態"] || "-"}
-      </p>
-      <p>
-        <b>部品:</b> {currentPart && currentPart["部品名"] ? currentPart["部品名"] : "-"} /{" "}
-        <b>必要数:</b> {currentPart && currentPart["必要数"] ? currentPart["必要数"] : "-"}
-      </p>
+      <h3>📦 ピッキング進行</h3>
+      <p><b>製品ID:</b> {progress["製品ID"] || "-"}</p>
+      <p><b>状態:</b> {progress["状態"] || "-"}</p>
+      <p><b>部品:</b> {current["部品名"]}（必要数 {current["必要数"]}）</p>
 
-      {currentPart && currentPart["画像URL"] && (
+      {current["画像URL"] && (
         <img
-          src={currentPart["画像URL"]}
+          src={current["画像URL"]}
           width="220"
           height="220"
-          alt={currentPart["部品名"] || "part"}
+          alt={current["部品名"]}
           style={{ borderRadius: 8, border: "1px solid #ccc" }}
         />
       )}
 
-      <p style={{ marginTop: 10 }}>在庫: {currentPart && currentPart["在庫"] ? currentPart["在庫"] : "-"}</p>
+      <p style={{ marginTop: 10 }}>在庫: {current["在庫"]}</p>
 
       <div style={{ marginTop: "1rem" }}>
         <button
           onClick={handleNext}
-          disabled={updating}
-          style={{
-            fontSize: "1.2rem",
-            padding: "0.6rem 2rem",
-            borderRadius: 10,
-            backgroundColor: "#008cff",
-            color: "white",
-            border: "none",
-            opacity: updating ? 0.7 : 1
-          }}
+          style={{ fontSize: "1.2rem", padding: "0.6rem 2rem", borderRadius: 10, backgroundColor: "#008cff", color: "white", border: "none" }}
         >
-          {updating ? "Updating..." : nextPart ? "Next Part ▶" : "Complete"}
+          {nextPart ? "次の部品へ ▶" : "完了"}
         </button>
       </div>
 
-      {message && <p style={{ marginTop: "1rem", color: "#333" }}>{message}</p>}
+      {msg && <p style={{ marginTop: "1rem", color: "#333" }}>{msg}</p>}
     </div>
   );
 }
