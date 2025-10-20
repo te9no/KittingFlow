@@ -39,7 +39,7 @@ export async function importCSV(file, target) {
           id,
           name: readCell(r, ["name", "Name", "Part Name", "PartName", "\u90e8\u54c1\u540d"], id),
           stock: num(readCell(r, ["stock", "Stock", "Qty", "Quantity", "\u5728\u5eab", "Inventory", "InventoryNum"], "0")),
-          imageUrl: readCell(r, ["imageUrl", "Image URL", "ImageURL", "\u753b\u50cfURL"], "")
+        imageUrl: readCell(r, ["imageUrl", "Image URL", "ImageURL", "ImgURL", "\u753b\u50cfURL"], "")
         };
       })
     );
