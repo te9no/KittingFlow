@@ -6,9 +6,7 @@ export default function PartsTable() {
   const [editing, setEditing] = useState(null);
   const [stockVal, setStockVal] = useState('');
 
-  async function load() {
-    setParts(await db.parts.toArray());
-  }
+  async function load() { setParts(await db.parts.toArray()); }
   useEffect(() => { load(); }, []);
 
   async function updateStock(id) {

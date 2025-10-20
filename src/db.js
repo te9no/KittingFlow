@@ -1,13 +1,38 @@
 import Dexie from 'dexie';
 
-export const db = new Dexie('kittingflow_local');
-db.version(2).stores({
-  parts: 'id,name,stock,imageUrl',
-  recipes: '++id,productId,partId,qty',
-  products: 'id,name,status',
-  progress: 'productId'
-});
+export let db;
 
+async function initDB() {
+  try {
+    db = new Dexie('kittingflow_local');
+    db.version(2).stores({
+      parts: 'id,name,stock,imageUrl',       // 主キー: id
+      recipes: '++id,productId,partId,qty',  // 自動ID
+      products: 'id,name,status',            // 主キー: id
+      progress: 'productId'                  // 主キー: productId
+    });
+    await db.open();
+  } catch (e) {
+    if (e.name === 'UpgradeError') {
+      console.warn('Detected old DB schema — resetting...');
+      await Dexie.delete('kittingflow_local');
+      // 再初期化
+      db = new Dexie('kittingflow_local');
+      db.version(2).stores({
+        parts: 'id,name,stock,imageUrl',
+        recipes: '++id,productId,partId,qty',
+        products: 'id,name,status',
+        progress: 'productId'
+      });
+      await db.open();
+    } else {
+      throw e;
+    }
+  }
+}
+await initDB();
+
+// 初期サンプル投入（空のときのみ）
 export async function initSampleDataIfEmpty() {
   const count = await db.parts.count();
   if (count === 0) {
@@ -30,6 +55,7 @@ export async function initSampleDataIfEmpty() {
   }
 }
 
+// 進捗
 export async function getProgress(productId) {
   const pr = await db.progress.get(productId);
   if (!pr) return { productId, state: '準備中', currentIndex: 0 };
@@ -40,6 +66,7 @@ export async function setProgress(productId, patch) {
   await db.progress.put({ ...cur, ...patch, productId });
 }
 
+// 製品の部品一覧（JOIN）
 export async function getPartsForProduct(productId) {
   const [recipes, parts] = await Promise.all([
     db.recipes.where({ productId }).toArray(),
@@ -47,6 +74,8 @@ export async function getPartsForProduct(productId) {
   ]);
   const map = Object.fromEntries(parts.map(p => [p.id, p]));
   return recipes.map(r => ({
+    id: r.id,
+    productId: r.productId,
     partId: r.partId,
     qty: Number(r.qty),
     name: map[r.partId]?.name ?? r.partId,
