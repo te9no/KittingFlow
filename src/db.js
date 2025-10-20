@@ -3,30 +3,34 @@ import Dexie from 'dexie';
 export let db;
 
 async function initDB() {
-  db = new Dexie('kittingflow_local');
-  db.version(2).stores({
-    parts: 'id,name,stock,imageUrl',
-    recipes: '++id,productId,partId,qty',
-    products: 'id,name,status',
-    progress: 'productId'
-  });
-  await db.open();
-}
-
-// 🧩 Top-level await禁止環境向け：即時関数で実行
-(async () => {
   try {
-    await initDB();
+    db = new Dexie('kittingflow_local');
+    db.version(2).stores({
+      parts: 'id,name,stock,imageUrl',       // 主キー: id
+      recipes: '++id,productId,partId,qty',  // 自動ID
+      products: 'id,name,status',            // 主キー: id
+      progress: 'productId'                  // 主キー: productId
+    });
+    await db.open();
   } catch (e) {
     if (e.name === 'UpgradeError') {
       console.warn('Detected old DB schema — resetting...');
       await Dexie.delete('kittingflow_local');
-      await initDB();
+      // 再初期化
+      db = new Dexie('kittingflow_local');
+      db.version(2).stores({
+        parts: 'id,name,stock,imageUrl',
+        recipes: '++id,productId,partId,qty',
+        products: 'id,name,status',
+        progress: 'productId'
+      });
+      await db.open();
     } else {
       throw e;
     }
   }
-})();
+}
+await initDB();
 
 // 初期サンプル投入（空のときのみ）
 export async function initSampleDataIfEmpty() {
