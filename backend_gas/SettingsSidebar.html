@@ -1,35 +1,65 @@
 <!DOCTYPE html>
-<html>
-  <body style="font-family:sans-serif;padding:10px;">
-    <h3>⚙️ 設定</h3>
-    <label>許可ユーザー (カンマ区切り):</label><br>
-    <input id="users" style="width:100%" /><br><br>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>KittingFlow Settings</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        padding: 12px;
+      }
+      label {
+        display: block;
+        margin-top: 12px;
+        font-weight: 600;
+      }
+      input,
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 4px;
+        padding: 6px;
+      }
+      button {
+        margin-top: 18px;
+        padding: 8px 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <h3>⚙ KittingFlow Settings</h3>
+    <label for="users">Allowed users (comma separated)</label>
+    <textarea id="users" rows="3"></textarea>
 
-    <label>在庫アラート閾値:</label><br>
-    <input id="threshold" type="number" /><br><br>
+    <label for="threshold">Inventory alert threshold</label>
+    <input id="threshold" type="number" min="0" />
 
-    <label>ラベルIDプレフィックス:</label><br>
-    <input id="prefix" /><br><br>
+    <label for="prefix">Label ID prefix</label>
+    <input id="prefix" />
 
-    <button onclick="save()">💾 保存</button>
+    <button onclick="save()">Save settings</button>
 
     <script>
-      google.script.run.withSuccessHandler(data => {
-        document.getElementById('users').value = data.ALLOWED_USERS || '';
-        document.getElementById('threshold').value = data.ALERT_THRESHOLD || '';
-        document.getElementById('prefix').value = data.LABEL_PREFIX || '';
-      }).getSettings();
+      function populateForm(data) {
+        document.getElementById("users").value = data.ALLOWED_USERS || "";
+        document.getElementById("threshold").value = data.ALERT_THRESHOLD || "";
+        document.getElementById("prefix").value = data.LABEL_PREFIX || "";
+      }
+
+      function notifyComplete() {
+        alert("Settings saved.");
+      }
 
       function save() {
         const settings = {
-          ALLOWED_USERS: document.getElementById('users').value,
-          ALERT_THRESHOLD: document.getElementById('threshold').value,
-          LABEL_PREFIX: document.getElementById('prefix').value
+          ALLOWED_USERS: document.getElementById("users").value.trim(),
+          ALERT_THRESHOLD: document.getElementById("threshold").value,
+          LABEL_PREFIX: document.getElementById("prefix").value.trim()
         };
-        google.script.run.withSuccessHandler(() => {
-          alert('設定を保存しました！');
-        }).saveSettings(settings);
+        google.script.run.withSuccessHandler(notifyComplete).saveSettings(settings);
       }
+
+      google.script.run.withSuccessHandler(populateForm).getSettings();
     </script>
   </body>
 </html>

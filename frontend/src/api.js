@@ -1,4 +1,11 @@
-const GAS_URL = import.meta.env.VITE_GAS_URL;
+const GAS_URL = import.meta.env.VITE_GAS_URL || "";
+
+function ensureGasUrl() {
+  if (!GAS_URL) {
+    throw new Error("VITE_GAS_URL is not configured.");
+  }
+  return GAS_URL;
+}
 
 function buildFormBody(values) {
   const params = new URLSearchParams();
@@ -11,7 +18,7 @@ function buildFormBody(values) {
 }
 
 export async function verifyAndResume(idToken) {
-  const res = await fetch(GAS_URL, {
+  const res = await fetch(ensureGasUrl(), {
     method: "POST",
     body: buildFormBody({ action: "resume", id_token: idToken })
   });
@@ -23,7 +30,7 @@ export async function verifyAndResume(idToken) {
 }
 
 export async function getParts() {
-  const res = await fetch(`${GAS_URL}?action=parts`);
+  const res = await fetch(`${ensureGasUrl()}?action=parts`);
   if (!res.ok) {
     throw new Error("Failed to load parts data.");
   }
@@ -31,7 +38,7 @@ export async function getParts() {
 }
 
 export async function getProgress() {
-  const res = await fetch(`${GAS_URL}?action=progress`);
+  const res = await fetch(`${ensureGasUrl()}?action=progress`);
   if (!res.ok) {
     throw new Error("Failed to load progress data.");
   }
@@ -39,7 +46,7 @@ export async function getProgress() {
 }
 
 export async function updateProgress(nextPartId) {
-  const res = await fetch(GAS_URL, {
+  const res = await fetch(ensureGasUrl(), {
     method: "POST",
     body: buildFormBody({ action: "next", partId: nextPartId })
   });
