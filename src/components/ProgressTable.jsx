@@ -190,10 +190,10 @@ export default function ProgressTable() {
   }
 
   function printQrLabel() {
-    if (!qrTarget || !qrDataUrl) return;
-    const printWindow = window.open("", "_blank", "width=400,height=600");
-    if (!printWindow) return;
-    const labelCss = `
+  if (!qrTarget || !qrDataUrl) return;
+  const printWindow = window.open(\"\", \"_blank\", \"width=400,height=600\");
+  if (!printWindow) return;
+  const labelCss = 
       @page {
         size: 40mm 30mm;
         margin: 2mm;
@@ -222,174 +222,48 @@ export default function ProgressTable() {
         font-size: 12px;
         margin: 4px 0 0;
       }
-    `;
-    printWindow.document.write(`
+    ;
+  const printScript = 
+      window.onload = function () {
+        const img = document.getElementById('qr-image');
+        function finish() {
+          setTimeout(function () {
+            window.focus();
+            window.print();
+          }, 150);
+        }
+        if (img) {
+          if (img.complete) {
+            finish();
+          } else {
+            img.onload = finish;
+            img.onerror = finish;
+          }
+        } else {
+          finish();
+        }
+        window.onafterprint = function () {
+          window.close();
+        };
+      };
+    ;
+  printWindow.document.write(
       <html>
         <head>
-          <title>${qrTarget.productId} - QR</title>
-          <style>${labelCss}</style>
+          <title> - QR</title>
+          <style></style>
         </head>
         <body>
-          <div class="label">
-            <img src="${qrDataUrl}" alt="QR code" />
-            <h2>${qrTarget.productId}</h2>
-            <p>${qrTarget.productName || ""}</p>
+          <div class=\"label\">
+            <img id=\"qr-image\" src=\"\" alt=\"QR code\" />
+            <h2></h2>
+            <p></p>
           </div>
+          <script><\\/script>
         </body>
       </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
-    printWindow.close();
-  }
-
-  return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: "16px" }}>
-      <h3>製造管理</h3>
-      <table style={{ width: "100%", borderCollapse: "collapse", background: "#fff", borderRadius: 8, overflow: "hidden" }}>
-        <thead style={{ background: "#eef2f7" }}>
-          <tr>
-            <th style={{ textAlign: "left", padding: 8 }}>
-              <button
-                onClick={() => toggleSort("productId")}
-                style={{ border: "none", background: "transparent", cursor: "pointer", fontWeight: 600 }}
-              >
-                製品ID{sortIndicator(sortKey === "productId", sortDir)}
-              </button>
-            </th>
-            <th style={{ textAlign: "left", padding: 8 }}>
-              <button
-                onClick={() => toggleSort("productName")}
-                style={{ border: "none", background: "transparent", cursor: "pointer", fontWeight: 600 }}
-              >
-                製品名{sortIndicator(sortKey === "productName", sortDir)}
-              </button>
-            </th>
-            <th style={{ textAlign: "center", padding: 8 }}>
-              <button
-                onClick={() => toggleSort("state")}
-                style={{ border: "none", background: "transparent", cursor: "pointer", fontWeight: 600 }}
-              >
-                状態{sortIndicator(sortKey === "state", sortDir)}
-              </button>
-            </th>
-            <th style={{ textAlign: "center", padding: 8 }}>
-              <button
-                onClick={() => toggleSort("progress")}
-                style={{ border: "none", background: "transparent", cursor: "pointer", fontWeight: 600 }}
-              >
-                工程{sortIndicator(sortKey === "progress", sortDir)}
-              </button>
-            </th>
-            <th style={{ padding: 8 }}>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sortedRows.map((row) => (
-            <tr key={row.productId} style={{ borderTop: "1px solid #e5e7eb" }}>
-              <td style={{ padding: 8 }}>{row.productId}</td>
-              <td style={{ padding: 8 }}>{row.productName}</td>
-              <td style={{ padding: 8, textAlign: "center" }}>{row.state}</td>
-              <td style={{ padding: 8, textAlign: "center" }}>
-                {row.total ? `${row.currentIndex + 1}/${row.total}` : "0/0"}
-              </td>
-              <td style={operationsCellStyle}>
-                <button
-                  onClick={() => reset(row.productId)}
-                  style={resetButtonStyle}
-                  {...resetHoverHandlers}
-                >
-                  リセット
-                </button>
-                <label style={stepLabelStyle}>
-                  <span>工程:</span>
-                  <input
-                    type="number"
-                    min="1"
-                    max={Math.max(row.total, 1)}
-                    defaultValue={row.total ? row.currentIndex + 1 : 1}
-                    onBlur={(event) =>
-                      updateIndex(row.productId, Number(event.target.value) - 1, row.total)
-                    }
-                    style={{ width: 70 }}
-                  />
-                </label>
-                <button
-                  onClick={() => openQrModal(row)}
-                  style={qrButtonStyle}
-                  {...qrHoverHandlers}
-                >
-                  QRラベル
-                </button>
-                <button
-                  onClick={() => remove(row.productId)}
-                  style={deleteButtonStyle}
-                  {...deleteHoverHandlers}
-                >
-                  削除
-                </button>
-              </td>
-            </tr>
-          ))}
-          {!sortedRows.length && (
-            <tr>
-              <td colSpan={5} style={{ padding: 12, textAlign: "center", color: "#666" }}>
-                製品がありません。Products.csv を取り込んでください。
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-
-      {qrTarget && (
-        <div style={modalOverlayStyle} onClick={closeQrModal}>
-          <div style={modalStyle} onClick={(event) => event.stopPropagation()}>
-            <h4 style={{ margin: "0 0 12px" }}>QRコードラベル</h4>
-            <p style={{ margin: "0 0 16px", color: "#4b5563" }}>
-              印刷前にブラウザの印刷設定でラベルサイズを 40mm × 30mm 程度に調整してください。
-            </p>
-            {qrLoading ? (
-              <p style={{ color: "#4b5563" }}>QRコードを生成しています…</p>
-            ) : qrError ? (
-              <p style={{ color: "#dc2626" }}>{qrError}</p>
-            ) : (
-              <>
-                <img
-                  src={qrDataUrl}
-                  alt="QRコード"
-                  style={{ width: 220, height: 220, objectFit: "contain", marginBottom: 12 }}
-                />
-                <div style={{ fontSize: 14, color: "#111827", marginBottom: 16 }}>
-                  <div>{qrTarget.productId}</div>
-                  <div>{qrTarget.productName}</div>
-                </div>
-              </>
-            )}
-            <div style={{ display: "flex", justifyContent: "center", gap: 12 }}>
-              <button
-                onClick={printQrLabel}
-                style={buttonStyles.primary(Boolean(qrDataUrl && !qrLoading && !qrError))}
-                {...createHoverHandlers(
-                  buttonStyles.primary,
-                  hoverStyles.primary,
-                  () => Boolean(qrDataUrl && !qrLoading && !qrError)
-                )}
-                disabled={!qrDataUrl || qrLoading || Boolean(qrError)}
-              >
-                印刷
-              </button>
-              <button
-                onClick={closeQrModal}
-                style={buttonStyles.secondary}
-                {...modalCloseHover}
-              >
-                閉じる
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+    );
+  printWindow.document.close();
 }
+
+
