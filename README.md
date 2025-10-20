@@ -81,6 +81,26 @@ The GAS project exposes a lightweight health check and self-test:
 - HTTP: `GET ${VITE_GAS_URL}?action=health` returns sheet presence and current settings.
 - `clasp run runSelfTest` prints the same information in the terminal.
 
+CSV Import / Export
+-------------------
+
+- Export any sheet to CSV:
+
+  ```
+  GET ${VITE_GAS_URL}?action=export&target=parts    # or progress, settings
+  ```
+
+  The response downloads a CSV file with headers taken from the sheet.
+
+- Import CSV data (completely replaces the sheet contents):
+
+  ```
+  POST ${VITE_GAS_URL}
+  action=import&target=parts&csv=<url-encoded CSV string>
+  ```
+
+  Targets: `settings`, `parts`, `progress`. The first row must contain column headers. Use UTF-8 when encoding the CSV body.
+
 Troubleshooting
 ---------------
 
