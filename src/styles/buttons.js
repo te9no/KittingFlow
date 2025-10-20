@@ -13,7 +13,8 @@ export const buttonStyles = {
     boxShadow: enabled ? "0 8px 16px rgba(37, 99, 235, 0.25)" : "none",
     transition: "all 0.2s ease",
     cursor: enabled ? "pointer" : "not-allowed",
-    transform: "translateY(0)"
+    transform: "translateY(0)",
+    whiteSpace: "nowrap"
   }),
   secondary: {
     minWidth: 120,
@@ -25,7 +26,8 @@ export const buttonStyles = {
     fontSize: "0.95rem",
     fontWeight: 500,
     cursor: "pointer",
-    transition: "background 0.2s ease, color 0.2s ease, border 0.2s ease"
+    transition: "background 0.2s ease, color 0.2s ease, border 0.2s ease",
+    whiteSpace: "nowrap"
   },
   subtle: {
     padding: "8px 16px",
@@ -36,7 +38,8 @@ export const buttonStyles = {
     fontSize: "0.95rem",
     fontWeight: 500,
     cursor: "pointer",
-    transition: "background 0.2s ease, color 0.2s ease"
+    transition: "background 0.2s ease, color 0.2s ease",
+    whiteSpace: "nowrap"
   },
   danger: (enabled = true) => ({
     minWidth: 120,
@@ -52,7 +55,8 @@ export const buttonStyles = {
     cursor: enabled ? "pointer" : "not-allowed",
     boxShadow: enabled ? "0 8px 16px rgba(239, 68, 68, 0.25)" : "none",
     transition: "all 0.2s ease",
-    transform: "translateY(0)"
+    transform: "translateY(0)",
+    whiteSpace: "nowrap"
   }),
   tab: (active = false) => ({
     padding: "8px 14px",
@@ -64,7 +68,8 @@ export const buttonStyles = {
     fontWeight: 600,
     cursor: "pointer",
     transition: "background 0.2s ease, transform 0.2s ease",
-    transform: active ? "translateY(-1px)" : "translateY(0)"
+    transform: active ? "translateY(-1px)" : "translateY(0)",
+    whiteSpace: "nowrap"
   })
 };
 

@@ -3,13 +3,60 @@ import { db, getProgress, setProgress, getPartsForProduct } from "../db";
 import { buttonStyles, hoverStyles, createHoverHandlers } from "../styles/buttons";
 
 const STATE_READY = "準備中";
+const modalOverlayStyle = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(15,23,42,0.55)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 1000,
+  padding: "16px"
+};
+
+const modalStyle = {
+  background: "#fff",
+  borderRadius: 16,
+  padding: 24,
+  width: "min(420px, 100%)",
+  boxShadow: "0 20px 45px rgba(15, 23, 42, 0.25)",
+  textAlign: "center",
+  fontFamily: "Inter, system-ui, sans-serif"
+};
 
 export default function ProgressTable() {
   const [rows, setRows] = useState([]);
+  const [qrTarget, setQrTarget] = useState(null);
+  const [qrDataUrl, setQrDataUrl] = useState("");
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState("");
 
   useEffect(() => {
     load();
   }, []);
+
+  const operationsCellStyle = useMemo(
+    () => ({
+      padding: 8,
+      display: "grid",
+      gridTemplateColumns: "auto auto auto auto",
+      alignItems: "center",
+      justifyContent: "end",
+      gap: 12
+    }),
+    []
+  );
+
+  const stepLabelStyle = useMemo(
+    () => ({
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      fontSize: "0.95rem",
+      color: "#1f2937"
+    }),
+    []
+  );
 
   const resetHoverHandlers = useMemo(
     () => createHoverHandlers(() => ({ ...buttonStyles.secondary }), hoverStyles.secondary, true),
@@ -17,6 +64,27 @@ export default function ProgressTable() {
   );
   const deleteHoverHandlers = useMemo(
     () => createHoverHandlers(buttonStyles.danger, hoverStyles.danger, true),
+    []
+  );
+  const qrHoverHandlers = useMemo(
+    () => createHoverHandlers(buttonStyles.primary, hoverStyles.primary, true),
+    []
+  );
+  const modalCloseHover = useMemo(
+    () => createHoverHandlers(() => buttonStyles.secondary, hoverStyles.secondary, true),
+    []
+  );
+
+  const resetButtonStyle = useMemo(
+    () => ({ ...buttonStyles.secondary, minWidth: 90, justifySelf: "end" }),
+    []
+  );
+  const qrButtonStyle = useMemo(
+    () => ({ ...buttonStyles.primary(true), minWidth: 120, justifySelf: "end" }),
+    []
+  );
+  const deleteButtonStyle = useMemo(
+    () => ({ ...buttonStyles.danger(true), minWidth: 90, justifySelf: "end" }),
     []
   );
 
@@ -56,6 +124,93 @@ export default function ProgressTable() {
     await load();
   }
 
+  async function openQrModal(row) {
+    setQrTarget(row);
+    setQrDataUrl("");
+    setQrError("");
+    setQrLoading(true);
+    try {
+      const payload = JSON.stringify({ productId: row.productId, productName: row.productName });
+      const response = await fetch(
+        `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(payload)}`
+      );
+      if (!response.ok) throw new Error("QRコードの生成に失敗しました");
+      const blob = await response.blob();
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      setQrDataUrl(dataUrl);
+    } catch (error) {
+      setQrError(error.message || "QRコードの取得に失敗しました");
+    } finally {
+      setQrLoading(false);
+    }
+  }
+
+  function closeQrModal() {
+    setQrTarget(null);
+    setQrDataUrl("");
+    setQrError("");
+  }
+
+  function printQrLabel() {
+    if (!qrTarget || !qrDataUrl) return;
+    const printWindow = window.open("", "_blank", "width=400,height=600");
+    if (!printWindow) return;
+    const labelCss = `
+      @page {
+        size: 40mm 30mm;
+        margin: 2mm;
+      }
+      body {
+        margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Inter', system-ui, sans-serif;
+        color: #111827;
+      }
+      .label {
+        text-align: center;
+      }
+      .label img {
+        width: 180px;
+        height: 180px;
+        object-fit: contain;
+      }
+      .label h2 {
+        font-size: 14px;
+        margin: 6px 0 0;
+      }
+      .label p {
+        font-size: 12px;
+        margin: 4px 0 0;
+      }
+    `;
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${qrTarget.productId} - QR</title>
+          <style>${labelCss}</style>
+        </head>
+        <body>
+          <div class="label">
+            <img src="${qrDataUrl}" alt="QR code" />
+            <h2>${qrTarget.productId}</h2>
+            <p>${qrTarget.productName || ""}</p>
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
+  }
+
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "16px" }}>
       <h3>製造管理</h3>
@@ -79,23 +234,16 @@ export default function ProgressTable() {
                 {row.total ? `${row.currentIndex + 1}/${row.total}` : "0/0"}
               </td>
               <td
-                style={{
-                  padding: 8,
-                  textAlign: "center",
-                  display: "flex",
-                  justifyContent: "center",
-                  gap: 8,
-                  flexWrap: "wrap"
-                }}
+                style={operationsCellStyle}
               >
                 <button
                   onClick={() => reset(row.productId)}
-                  style={buttonStyles.secondary}
+                  style={resetButtonStyle}
                   {...resetHoverHandlers}
                 >
                   リセット
                 </button>
-                <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <label style={stepLabelStyle}>
                   <span>工程:</span>
                   <input
                     type="number"
@@ -109,8 +257,15 @@ export default function ProgressTable() {
                   />
                 </label>
                 <button
+                  onClick={() => openQrModal(row)}
+                  style={qrButtonStyle}
+                  {...qrHoverHandlers}
+                >
+                  QR
+                </button>
+                <button
                   onClick={() => remove(row.productId)}
-                  style={buttonStyles.danger()}
+                  style={deleteButtonStyle}
                   {...deleteHoverHandlers}
                 >
                   削除
@@ -127,7 +282,55 @@ export default function ProgressTable() {
           )}
         </tbody>
       </table>
+
+      {qrTarget && (
+        <div style={modalOverlayStyle} onClick={closeQrModal}>
+          <div style={modalStyle} onClick={(event) => event.stopPropagation()}>
+            <h4 style={{ margin: "0 0 12px" }}>QRコードラベル</h4>
+            <p style={{ margin: "0 0 16px", color: "#4b5563" }}>
+              印刷前にブラウザの印刷設定でラベルサイズを 40mm × 30mm 程度に調整してください。
+            </p>
+            {qrLoading ? (
+              <p style={{ color: "#4b5563" }}>QRコードを生成しています…</p>
+            ) : qrError ? (
+              <p style={{ color: "#dc2626" }}>{qrError}</p>
+            ) : (
+              <>
+                <img
+                  src={qrDataUrl}
+                  alt="QRコード"
+                  style={{ width: 220, height: 220, objectFit: "contain", marginBottom: 12 }}
+                />
+                <div style={{ fontSize: 14, color: "#111827", marginBottom: 16 }}>
+                  <div>{qrTarget.productId}</div>
+                  <div>{qrTarget.productName}</div>
+                </div>
+              </>
+            )}
+            <div style={{ display: "flex", justifyContent: "center", gap: 12 }}>
+              <button
+                onClick={printQrLabel}
+                style={buttonStyles.primary(Boolean(qrDataUrl && !qrLoading && !qrError))}
+                {...createHoverHandlers(
+                  buttonStyles.primary,
+                  hoverStyles.primary,
+                  () => Boolean(qrDataUrl && !qrLoading && !qrError)
+                )}
+                disabled={!qrDataUrl || qrLoading || Boolean(qrError)}
+              >
+                印刷
+              </button>
+              <button
+                onClick={closeQrModal}
+                style={buttonStyles.secondary}
+                {...modalCloseHover}
+              >
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
