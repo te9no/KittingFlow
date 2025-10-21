@@ -51,6 +51,7 @@ export default function PickingUI() {
   const [parts, setParts] = useState([]);
   const [progress, setProg] = useState(INITIAL_PROGRESS);
   const [msg, setMsg] = useState("");
+  const [showDialog, setShowDialog] = useState(false);
 
   const loadProductContext = useCallback(async (targetId) => {
     if (!targetId) {
@@ -144,6 +145,7 @@ async function next() {
     await loadProductContext(productId);
     if (reachedEnd) {
       await refreshProducts();
+      setShowDialog(true);
     }
   }
 
@@ -274,37 +276,21 @@ async function next() {
           </div>
         </div>
       )}
-
+      {showDialog && (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+      background: 'rgba(0,0,0,0.4)', display: 'flex',
+      justifyContent: 'center', alignItems: 'center', zIndex: 999
+    }}>
+      <div style={{
+        background: '#fff', padding: 24, borderRadius: 8, textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.2)'
+      }}>
+        <h3>🎉 ピッキング完了！</h3>
+        <p>全ての部品のピッキングが完了しました。お疲れさまでした。</p>
+        <button onClick={() => setShowDialog(false)} style={{marginTop:12}}>閉じる</button>
+      </div>
+    </div>
+    )}
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
