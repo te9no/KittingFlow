@@ -18,44 +18,64 @@ export default function RequirementSummarySelect() {
 
   const addRow = () => setSelection([...selection, { id: "", qty: 1 }]);
 
-  /** ✅ 必要数計算ロジック（製品ごとのレシピqty × 台数を反映） */
+  /** ✅ 必要セット・個数別の計算ロジック */
   const calculateSummary = async () => {
-    const [allRecipes, allParts] = await Promise.all([
+    const [allRecipes, allParts, allProducts] = await Promise.all([
       db.recipes.toArray(),
       db.parts.toArray(),
+      db.products.toArray(),
     ]);
+
     const partMap = Object.fromEntries(
-      allParts.map((p) => [p.partId || p.id || p["Part ID"], p])
+      allParts.map((p) => [String(p.partId ?? p.id ?? p["Part ID"] ?? ""), p])
     );
 
-    const acc = {}; // { [partId]: { partId, name, required, stock } }
+    const productToTemplate = Object.fromEntries(
+      allProducts.map((pr) => [
+        String(pr.productId),
+        String(pr.templateId ?? pr.internalId ?? ""),
+      ])
+    );
+
+    const acc = {}; // { partId: { partId, name, sets, perSet, required, stock } }
 
     for (const item of selection) {
-      const internalId = item.id;
+      const rawId = String(item.id || "").trim();
       const units = Number(item.qty || 0);
-      if (!internalId || units <= 0) continue;
+      if (!rawId || units <= 0) continue;
 
-      const recipes = allRecipes.filter(
-        (r) => String(r.productId) === String(internalId)
+      // internalId or FancyID両対応
+      let keyForRecipe = rawId;
+      let recipes = allRecipes.filter(
+        (r) => String(r.productId) === keyForRecipe
       );
+      if (recipes.length === 0 && productToTemplate[rawId]) {
+        keyForRecipe = productToTemplate[rawId];
+        recipes = allRecipes.filter(
+          (r) => String(r.productId) === keyForRecipe
+        );
+      }
 
       for (const rec of recipes) {
-        const partId = rec.partId;
-        const perUnit = Number(rec.qty || 0);
-        const add = perUnit * units;
-
-        if (!partId || add <= 0) continue;
+        const partId = String(rec.partId || "").trim();
+        const perSet = Number(rec.qty || rec["必要数"] || 0);
+        if (!partId || !Number.isFinite(perSet)) continue;
 
         if (!acc[partId]) {
           const p = partMap[partId] || {};
           acc[partId] = {
             partId,
             name: p.name || partId,
+            sets: 0,
+            perSet,
             required: 0,
             stock: Number(p.stock || 0),
           };
         }
-        acc[partId].required += add;
+
+        // 同じ部品を別製品で共用する場合、setsは単純加算
+        acc[partId].sets += units;
+        acc[partId].required += units * perSet;
       }
     }
 
@@ -70,10 +90,12 @@ export default function RequirementSummarySelect() {
   /** ✅ CSV出力 */
   const exportCSV = () => {
     if (!summary.length) return alert("集計結果がありません");
-    const header = ["部品ID", "名称", "必要数", "在庫", "不足数"];
+    const header = ["部品ID", "名称", "必要セット数", "セットあたり個数", "合計必要個数", "在庫", "不足数"];
     const rows = summary.map((r) => [
       r.partId,
       r.name,
+      r.sets,
+      r.perSet,
       r.required,
       r.stock,
       r.shortage,
@@ -89,7 +111,7 @@ export default function RequirementSummarySelect() {
 
   return (
     <div style={{ maxWidth: 720, margin: "0 auto", padding: 16 }}>
-      <h3>🧮 部品集計（製品選択）</h3>
+      <h3>🧮 部品集計（必要セット・個数別）</h3>
 
       {selection.map((sel, idx) => (
         <div key={idx} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
@@ -134,7 +156,9 @@ export default function RequirementSummarySelect() {
               <tr>
                 <th style={th}>部品ID</th>
                 <th style={th}>名称</th>
-                <th style={th}>必要数</th>
+                <th style={th}>必要セット数</th>
+                <th style={th}>セットあたり個数</th>
+                <th style={th}>合計必要個数</th>
                 <th style={th}>在庫</th>
                 <th style={th}>不足数</th>
               </tr>
@@ -144,6 +168,8 @@ export default function RequirementSummarySelect() {
                 <tr key={r.partId}>
                   <td style={td}>{r.partId}</td>
                   <td style={td}>{r.name}</td>
+                  <td style={td}>{r.sets}</td>
+                  <td style={td}>{r.perSet}</td>
                   <td style={td}>{r.required}</td>
                   <td style={td}>{r.stock}</td>
                   <td
