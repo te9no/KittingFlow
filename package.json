@@ -1,21 +1,17 @@
 {
-  "name": "kittingflow-local-edition",
-  "version": "1.2.0",
-  "private": true,
-  "type": "module",
+  "name": "kittingflow-v1.5",
+  "version": "1.5.0",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "dexie": "^4.0.4",
-    "papaparse": "^5.4.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^5.4.8"
+    "vite": "^5.4.0"
   }
 }

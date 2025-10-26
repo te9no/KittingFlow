@@ -288,3 +288,33 @@ export async function createProductInstance({ id, internalId, name }) {
 
   return { id: fancyId, internalId, name: templateName };
 }
+
+export async function getTotalPartsRequirement(selectedProducts) {
+  const allRecipes = await db.recipes.toArray();
+  const parts = await db.parts.toArray();
+  const resultMap = {};
+
+  for (const { productId, quantity } of selectedProducts) {
+    const recipes = allRecipes.filter(r => r.productId === productId);
+    for (const rec of recipes) {
+      const key = rec.partId;
+      if (!resultMap[key]) {
+        const part = parts.find(p => p.partId === key) || {};
+        resultMap[key] = {
+          partId: key,
+          name: part.name || rec.partId,
+          stock: Number(part.stock || 0),
+          required: 0
+        };
+      }
+      resultMap[key].required += Number(rec.qty) * Number(quantity);
+    }
+  }
+
+  // 不足数を計算
+  Object.values(resultMap).forEach(p => {
+    p.shortage = Math.max(0, p.required - p.stock);
+  });
+
+  return Object.values(resultMap);
+}
