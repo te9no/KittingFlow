@@ -1,5 +1,32 @@
 import React, { useEffect, useState } from "react";
-import { getProductTemplates, db } from "../db";
+import { db, getProductTemplates } from "../db";
+
+const SELECTION_STATE_KEY = "requirementSummary.selection";
+const RESULTS_STATE_KEY = "requirementSummary.results";
+
+const readStoredState = (key) => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (err) {
+    console.warn("Failed to read summary state", err);
+    return null;
+  }
+};
+
+const writeStoredState = (key, value) => {
+  if (typeof window === "undefined") return;
+  try {
+    if (value == null) {
+      window.localStorage.removeItem(key);
+    } else {
+      window.localStorage.setItem(key, JSON.stringify(value));
+    }
+  } catch (err) {
+    console.warn("Failed to persist summary state", err);
+  }
+};
 
 export default function RequirementSummarySelect() {
   const [templates, setTemplates] = useState([]);
@@ -10,13 +37,29 @@ export default function RequirementSummarySelect() {
     getProductTemplates().then(setTemplates);
   }, []);
 
+  useEffect(() => {
+    const savedSelection = readStoredState(SELECTION_STATE_KEY);
+    const savedSummary = readStoredState(RESULTS_STATE_KEY);
+    if (Array.isArray(savedSelection) && savedSelection.length > 0) {
+      setSelection(savedSelection);
+    }
+    if (Array.isArray(savedSummary)) {
+      setSummary(savedSummary);
+    }
+  }, []);
+
   const handleSelectChange = (index, field, value) => {
     const updated = [...selection];
     updated[index][field] = field === "qty" ? Number(value) : value;
     setSelection(updated);
+    writeStoredState(SELECTION_STATE_KEY, updated);
   };
 
-  const addRow = () => setSelection([...selection, { id: "", qty: 1 }]);
+  const addRow = () => {
+    const next = [...selection, { id: "", qty: 1 }];
+    setSelection(next);
+    writeStoredState(SELECTION_STATE_KEY, next);
+  };
 
   /** ✅ 必要セット・個数別の計算ロジック */
   const calculateSummary = async () => {
@@ -85,6 +128,7 @@ export default function RequirementSummarySelect() {
     }));
 
     setSummary(list);
+    writeStoredState(RESULTS_STATE_KEY, list);
   };
 
   /** ✅ CSV出力 */
