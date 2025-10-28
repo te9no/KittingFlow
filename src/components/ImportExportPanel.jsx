@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { exportAllCSV, importCSV } from "../csv";
 import { buttonStyles, hoverStyles, createHoverHandlers } from "../styles/buttons";
 import {
@@ -7,6 +7,7 @@ import {
   loadDatasetFromGist,
   saveDatasetToGist
 } from "../gist";
+import { card, layout, palette, spacing, typography } from "../styles/theme";
 
 const LABELS = {
   parts: "Parts.csv",
@@ -118,49 +119,45 @@ export default function ImportExportPanel() {
   }
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: "16px" }}>
-      <h3>データ入出力</h3>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
-        <div style={{ background: "#fff", padding: 12, border: "1px solid #e5e7eb", borderRadius: 8 }}>
+    <div style={{ maxWidth: layout.maxWidth, margin: "0 auto", padding: `${spacing(4)} 0` }}>
+      <h3 style={{ marginBottom: spacing(3), fontWeight: typography.headingWeight }}>データ入出力</h3>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: spacing(3) }}>
+        <div style={card()}>
           <b>CSVインポート（KittingFlow v1.0 形式）</b>
-          <div style={{ marginTop: 8 }}>
+          <div style={{ marginTop: spacing(2), display: "grid", gap: spacing(2) }}>
             <label>Parts.csv: <input type="file" accept=".csv" ref={partsRef} onChange={() => handle(partsRef, "parts")} /></label>
-          </div>
-          <div style={{ marginTop: 8 }}>
             <label>Recipe.csv: <input type="file" accept=".csv" ref={recipesRef} onChange={() => handle(recipesRef, "recipes")} /></label>
-          </div>
-          <div style={{ marginTop: 8 }}>
             <label>Products.csv: <input type="file" accept=".csv" ref={productsRef} onChange={() => handle(productsRef, "products")} /></label>
-          </div>
-          <div style={{ marginTop: 8 }}>
             <label>Progress.csv: <input type="file" accept=".csv" ref={progressRef} onChange={() => handle(progressRef, "progress")} /></label>
           </div>
-          <p style={{ color: "#666", fontSize: "0.9rem", marginTop: 8 }}>
+          <p style={{ color: palette.textMuted, fontSize: typography.size.sm, marginTop: spacing(2) }}>
             ※ 列名は英語・日本語どちらでも構いません（例: Part ID / 部品ID など）。
           </p>
         </div>
 
-        <div style={{ background: "#fff", padding: 12, border: "1px solid #e5e7eb", borderRadius: 8 }}>
+        <div style={card()}>
           <b>CSVエクスポート</b>
-          <p style={{ margin: "8px 0" }}>現在のDB内容を4つのCSV（Parts / Recipe / Products / Progress）で保存します。</p>
+          <p style={{ margin: `${spacing(2)} 0`, color: palette.textMuted }}>
+            現在のDB内容を4つのCSV（Parts / Recipe / Products / Progress）で保存します。
+          </p>
           <button onClick={exportAllCSV} style={buttonStyles.primary()} {...exportHoverHandlers}>
             CSVを書き出す
           </button>
         </div>
 
-        <div style={{ background: "#fff", padding: 12, border: "1px solid #e5e7eb", borderRadius: 8 }}>
+        <div style={card()}>
           <b>GitHub Gist と同期</b>
-          <p style={{ margin: "8px 0" }}>
+          <p style={{ margin: `${spacing(2)} 0`, color: palette.textMuted }}>
             CSVの代わりに GitHub Gist をバックアップ先として使用できます。データは JSON ファイル（parts.json など）として保存されます。
           </p>
-          <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ display: "grid", gap: spacing(2) }}>
             <label style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
               Gist ID
               <input
                 value={gistId}
                 onChange={(event) => setGistId(event.target.value)}
                 placeholder="例: abcd1234ef5678901234"
-                style={{ marginTop: 4, width: "100%", boxSizing: "border-box", padding: "6px 8px" }}
+                style={{ marginTop: spacing(1), width: "100%", boxSizing: "border-box", padding: "6px 8px" }}
               />
             </label>
             <label style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
@@ -170,10 +167,10 @@ export default function ImportExportPanel() {
                 onChange={(event) => setGistToken(event.target.value)}
                 placeholder="github_pat_..."
                 type="password"
-                style={{ marginTop: 4, width: "100%", boxSizing: "border-box", padding: "6px 8px" }}
+                style={{ marginTop: spacing(1), width: "100%", boxSizing: "border-box", padding: "6px 8px" }}
               />
             </label>
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: spacing(3), flexWrap: "wrap" }}>
               <button
                 onClick={importFromGist}
                 disabled={!canImportGist}
@@ -202,15 +199,14 @@ export default function ImportExportPanel() {
                 Gistを開く
               </button>
             </div>
-            <p style={{ color: "#6b7280", fontSize: "0.85rem" }}>
+            <p style={{ color: palette.textMuted, fontSize: typography.size.sm }}>
               トークンはブラウザのローカルストレージに平文で保存されます。共有PCをご利用の際は利用後に削除してください。
             </p>
           </div>
         </div>
       </div>
-      {message && <p style={{ marginTop: 10 }}>{message}</p>}
-      {gistLoading && <p style={{ marginTop: 10, color: "#2563eb" }}>処理中...</p>}
+      {message && <p style={{ marginTop: spacing(3), color: palette.text }}>{message}</p>}
+      {gistLoading && <p style={{ marginTop: spacing(2), color: palette.primary }}>処理中...</p>}
     </div>
   );
 }
-

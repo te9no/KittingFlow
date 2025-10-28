@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { db, getProductTemplates } from "../db";
+import { card, layout, palette, spacing, typography } from "../styles/theme";
 
 const SELECTION_STATE_KEY = "requirementSummary.selection";
 const RESULTS_STATE_KEY = "requirementSummary.results";
@@ -61,12 +62,11 @@ export default function RequirementSummarySelect() {
     writeStoredState(SELECTION_STATE_KEY, next);
   };
 
-  /** ✅ 必要セット・個数別の計算ロジック */
   const calculateSummary = async () => {
     const [allRecipes, allParts, allProducts] = await Promise.all([
       db.recipes.toArray(),
       db.parts.toArray(),
-      db.products.toArray(),
+      db.products.toArray()
     ]);
 
     const partMap = Object.fromEntries(
@@ -76,27 +76,22 @@ export default function RequirementSummarySelect() {
     const productToTemplate = Object.fromEntries(
       allProducts.map((pr) => [
         String(pr.productId),
-        String(pr.templateId ?? pr.internalId ?? ""),
+        String(pr.templateId ?? pr.internalId ?? "")
       ])
     );
 
-    const acc = {}; // { partId: { partId, name, sets, perSet, required, stock } }
+    const acc = {};
 
     for (const item of selection) {
       const rawId = String(item.id || "").trim();
       const units = Number(item.qty || 0);
       if (!rawId || units <= 0) continue;
 
-      // internalId or FancyID両対応
       let keyForRecipe = rawId;
-      let recipes = allRecipes.filter(
-        (r) => String(r.productId) === keyForRecipe
-      );
+      let recipes = allRecipes.filter((r) => String(r.productId) === keyForRecipe);
       if (recipes.length === 0 && productToTemplate[rawId]) {
         keyForRecipe = productToTemplate[rawId];
-        recipes = allRecipes.filter(
-          (r) => String(r.productId) === keyForRecipe
-        );
+        recipes = allRecipes.filter((r) => String(r.productId) === keyForRecipe);
       }
 
       for (const rec of recipes) {
@@ -112,11 +107,10 @@ export default function RequirementSummarySelect() {
             sets: 0,
             perSet,
             required: 0,
-            stock: Number(p.stock || 0),
+            stock: Number(p.stock || 0)
           };
         }
 
-        // 同じ部品を別製品で共用する場合、setsは単純加算
         acc[partId].sets += units;
         acc[partId].required += units * perSet;
       }
@@ -124,14 +118,13 @@ export default function RequirementSummarySelect() {
 
     const list = Object.values(acc).map((r) => ({
       ...r,
-      shortage: Math.max(0, r.required - r.stock),
+      shortage: Math.max(0, r.required - r.stock)
     }));
 
     setSummary(list);
     writeStoredState(RESULTS_STATE_KEY, list);
   };
 
-  /** ✅ CSV出力 */
   const exportCSV = () => {
     if (!summary.length) return alert("集計結果がありません");
     const header = ["部品ID", "名称", "必要セット数", "セットあたり個数", "合計必要個数", "在庫", "不足数"];
@@ -142,7 +135,7 @@ export default function RequirementSummarySelect() {
       r.perSet,
       r.required,
       r.stock,
-      r.shortage,
+      r.shortage
     ]);
     const csv = [header, ...rows].map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -154,83 +147,93 @@ export default function RequirementSummarySelect() {
   };
 
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: 16 }}>
-      <h3>🧮 部品集計（必要セット・個数別）</h3>
+    <div style={{ maxWidth: layout.maxWidth, margin: "0 auto", padding: spacing(4) }}>
+      <h3 style={{ marginBottom: spacing(3), fontWeight: typography.headingWeight }}>🧮 部品集計（必要セット・個数別）</h3>
 
-      {selection.map((sel, idx) => (
-        <div key={idx} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-          <select
-            value={sel.id}
-            onChange={(e) => handleSelectChange(idx, "id", e.target.value)}
-            style={{ flex: 3, padding: "6px 8px" }}
+      <div style={card({ display: "grid", gap: spacing(2) })}>
+        {selection.map((sel, idx) => (
+          <div key={idx} style={{ display: "flex", gap: spacing(2) }}>
+            <select
+              value={sel.id}
+              onChange={(e) => handleSelectChange(idx, "id", e.target.value)}
+              style={{ flex: 3, padding: "8px 10px", borderRadius: spacing(1.5), border: `1px solid ${palette.border}` }}
+            >
+              <option value="">製品を選択</option>
+              {templates.map((t) => (
+                <option key={t.internalId} value={t.internalId}>
+                  {t.internalId} - {t.name}
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              min="1"
+              value={sel.qty}
+              onChange={(e) => handleSelectChange(idx, "qty", e.target.value)}
+              style={{ width: 100, padding: "8px 10px", textAlign: "center", borderRadius: spacing(1.5), border: `1px solid ${palette.border}` }}
+            />
+          </div>
+        ))}
+
+        <div style={{ display: "flex", gap: spacing(2), marginTop: spacing(1) }}>
+          <button onClick={addRow} style={{ ...buttonBase, background: palette.surfaceAlt }}>
+            + 製品を追加
+          </button>
+          <button
+            onClick={calculateSummary}
+            style={{ ...buttonBase, background: palette.primary, color: "#fff", borderColor: palette.primaryDark }}
           >
-            <option value="">製品を選択</option>
-            {templates.map((t) => (
-              <option key={t.internalId} value={t.internalId}>
-                {t.internalId} - {t.name}
-              </option>
-            ))}
-          </select>
-          <input
-            type="number"
-            min="1"
-            value={sel.qty}
-            onChange={(e) => handleSelectChange(idx, "qty", e.target.value)}
-            style={{ width: 80, textAlign: "center" }}
-          />
+            集計する
+          </button>
         </div>
-      ))}
-
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <button onClick={addRow}>+ 製品を追加</button>
-        <button onClick={calculateSummary}>集計する</button>
       </div>
 
       {summary.length > 0 && (
-        <div>
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "collapse",
-              marginTop: 16,
-              fontSize: "0.9rem",
-            }}
-          >
-            <thead style={{ background: "#f3f4f6" }}>
-              <tr>
-                <th style={th}>部品ID</th>
-                <th style={th}>名称</th>
-                <th style={th}>必要セット数</th>
-                <th style={th}>セットあたり個数</th>
-                <th style={th}>合計必要個数</th>
-                <th style={th}>在庫</th>
-                <th style={th}>不足数</th>
-              </tr>
-            </thead>
-            <tbody>
-              {summary.map((r) => (
-                <tr key={r.partId}>
-                  <td style={td}>{r.partId}</td>
-                  <td style={td}>{r.name}</td>
-                  <td style={td}>{r.sets}</td>
-                  <td style={td}>{r.perSet}</td>
-                  <td style={td}>{r.required}</td>
-                  <td style={td}>{r.stock}</td>
-                  <td
-                    style={{
-                      ...td,
-                      color: r.shortage > 0 ? "red" : "#222",
-                      fontWeight: r.shortage > 0 ? 600 : 400,
-                    }}
-                  >
-                    {r.shortage > 0 ? `-${r.shortage}` : "OK"}
-                  </td>
+        <div style={{ marginTop: spacing(4) }}>
+          <div style={card({ padding: "0", overflowX: "auto" })}>
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: typography.size.sm
+              }}
+            >
+              <thead style={{ background: palette.surfaceAlt }}>
+                <tr>
+                  <th style={th}>部品ID</th>
+                  <th style={th}>名称</th>
+                  <th style={th}>必要セット数</th>
+                  <th style={th}>セットあたり個数</th>
+                  <th style={th}>合計必要個数</th>
+                  <th style={th}>在庫</th>
+                  <th style={th}>不足数</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {summary.map((r) => (
+                  <tr key={r.partId}>
+                    <td style={td}>{r.partId}</td>
+                    <td style={td}>{r.name}</td>
+                    <td style={td}>{r.sets}</td>
+                    <td style={td}>{r.perSet}</td>
+                    <td style={td}>{r.required}</td>
+                    <td style={td}>{r.stock}</td>
+                    <td
+                      style={{
+                        ...td,
+                        color: r.shortage > 0 ? palette.danger : palette.text,
+                        fontWeight: r.shortage > 0 ? 600 : 400
+                      }}
+                    >
+                      {r.shortage > 0 ? `-${r.shortage}` : "OK"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-          <button onClick={exportCSV} style={{ marginTop: 12 }}>
+          <button onClick={exportCSV} style={{ marginTop: spacing(3), ...buttonBase, background: palette.surfaceAlt }}>
             CSV出力
           </button>
         </div>
@@ -239,5 +242,13 @@ export default function RequirementSummarySelect() {
   );
 }
 
-const th = { border: "1px solid #ccc", padding: "6px", textAlign: "center" };
-const td = { border: "1px solid #ddd", padding: "6px", textAlign: "center" };
+const buttonBase = {
+  padding: "8px 16px",
+  borderRadius: spacing(2),
+  border: `1px solid ${palette.border}`,
+  fontWeight: 600,
+  cursor: "pointer"
+};
+
+const th = { borderBottom: `1px solid ${palette.border}`, padding: `${spacing(2)} ${spacing(3)}`, textAlign: "center" };
+const td = { borderBottom: `1px solid ${palette.border}`, padding: `${spacing(1.5)} ${spacing(2)}`, textAlign: "center" };

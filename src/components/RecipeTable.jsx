@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { db } from "../db";
+import { card, layout, palette, spacing, typography } from "../styles/theme";
 
 const COLUMNS = [
   { key: "productId", label: "製品ID", align: "left" },
@@ -263,41 +264,63 @@ export default function RecipeTable() {
     });
   };
 
+  const containerStyle = {
+    maxWidth: layout.maxWidth,
+    margin: "0 auto",
+    padding: spacing(4)
+  };
+
+  const tableContainerStyle = {
+    ...card({ padding: "0" }),
+    overflowX: "auto"
+  };
+
   return (
-    <div style={{ maxWidth: 980, margin: "0 auto", padding: 16 }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <h3 style={{ margin: 0 }}>📜 レシピ一覧（Excel風編集）</h3>
-        <button onClick={addRow} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #2563eb", background: "#2563eb", color: "#fff" }}>
+    <div style={containerStyle}>
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: spacing(3) }}>
+        <h3 style={{ margin: 0, fontWeight: typography.headingWeight }}>📜 レシピ一覧（セル編集）</h3>
+        <button
+          onClick={addRow}
+          style={{
+            padding: "8px 16px",
+            borderRadius: spacing(2),
+            border: `1px solid ${palette.primaryDark}`,
+            background: palette.primary,
+            color: "#fff",
+            fontWeight: 600,
+            cursor: "pointer"
+          }}
+        >
           + 行を追加
         </button>
       </header>
 
       {message && (
-        <div style={{ marginBottom: 12, padding: "8px 12px", background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: 6, color: "#92400e" }}>
+        <div style={{ marginBottom: spacing(3), padding: `${spacing(2)} ${spacing(3)}`, background: "#fef3c7", border: `1px solid ${palette.warning}33`, borderRadius: spacing(2), color: "#92400e" }}>
           {message}
         </div>
       )}
 
-      <div style={{ overflowX: "auto", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+      <div style={tableContainerStyle}>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
-          <thead style={{ background: "#f3f4f6" }}>
+          <thead style={{ background: palette.surfaceAlt }}>
             <tr>
               {COLUMNS.map((column) => (
-                <th key={column.key} style={{ padding: "8px 12px", textAlign: column.align, fontWeight: 600, borderBottom: "1px solid #e5e7eb" }}>
+                <th key={column.key} style={{ padding: `${spacing(2)} ${spacing(3)}`, textAlign: column.align, fontWeight: 600, borderBottom: `1px solid ${palette.border}` }}>
                   {column.label}
                 </th>
               ))}
-              <th style={{ padding: "8px 12px", textAlign: "center", borderBottom: "1px solid #e5e7eb" }}>操作</th>
+              <th style={{ padding: `${spacing(2)} ${spacing(3)}`, textAlign: "center", borderBottom: `1px solid ${palette.border}` }}>操作</th>
             </tr>
           </thead>
           <tbody>
             {recipes.map((recipe, rowIndex) => (
-              <tr key={recipe.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+              <tr key={recipe.id} style={{ borderBottom: `1px solid ${palette.border}` }}>
                 {COLUMNS.map((column) => {
                   const editableIndex = EDITABLE_KEYS.indexOf(column.key);
                   const isEditable = editableIndex !== -1;
                   return (
-                    <td key={column.key} style={{ padding: "4px 8px", textAlign: column.align }}>
+                    <td key={column.key} style={{ padding: `${spacing(1.5)} ${spacing(2)}`, textAlign: column.align }}>
                       {isEditable ? (
                         <input
                           ref={(node) => {
@@ -314,10 +337,11 @@ export default function RecipeTable() {
                             width: "100%",
                             boxSizing: "border-box",
                             padding: "6px 8px",
-                            border: "1px solid #d1d5db",
-                            borderRadius: 4,
-                            fontSize: "0.9rem",
-                            textAlign: column.align
+                            border: `1px solid ${palette.border}`,
+                            borderRadius: spacing(1.5),
+                            fontSize: typography.size.sm,
+                            textAlign: column.align,
+                            background: palette.surfaceAlt
                           }}
                         />
                       ) : (
@@ -326,10 +350,17 @@ export default function RecipeTable() {
                     </td>
                   );
                 })}
-                <td style={{ padding: "4px 8px", textAlign: "center" }}>
+                <td style={{ padding: `${spacing(1.5)} ${spacing(2)}`, textAlign: "center" }}>
                   <button
                     onClick={() => deleteRow(recipe.id)}
-                    style={{ padding: "4px 8px", border: "1px solid #dc2626", borderRadius: 4, background: "#fee2e2", color: "#b91c1c" }}
+                    style={{
+                      padding: "6px 12px",
+                      border: `1px solid ${palette.danger}`,
+                      borderRadius: spacing(1.5),
+                      background: "#fee2e2",
+                      color: palette.danger,
+                      cursor: "pointer"
+                    }}
                   >
                     削除
                   </button>
@@ -338,7 +369,7 @@ export default function RecipeTable() {
             ))}
             {recipes.length === 0 && (
               <tr>
-                <td colSpan={COLUMNS.length + 1} style={{ padding: "12px", textAlign: "center", color: "#6b7280" }}>
+                <td colSpan={COLUMNS.length + 1} style={{ padding: spacing(3), textAlign: "center", color: palette.textMuted }}>
                   レシピデータがありません。CSV のインポートまたは行の追加を行ってください。
                 </td>
               </tr>
