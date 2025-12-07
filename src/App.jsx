@@ -86,7 +86,7 @@ function App() {
 
   return (
     <div>
-      <header style={headerStyle}>
+      <header style={headerStyle} data-app-header="true">
         <div style={headerInnerStyle}>
           <div style={{ fontWeight: typography.headingWeight, letterSpacing: "0.02em" }}>KittingFlow</div>
           <nav style={navStyle}>

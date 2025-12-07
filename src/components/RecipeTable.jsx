@@ -20,7 +20,10 @@ export default function RecipeTable() {
   const [drafts, setDrafts] = useState({});
   const [message, setMessage] = useState("");
   const [pendingFocus, setPendingFocus] = useState(null);
+  const [toolbarOffset, setToolbarOffset] = useState("0px");
+  const [scrollAreaHeight, setScrollAreaHeight] = useState(null);
   const cellRefs = useRef({});
+  const tableScrollRef = useRef(null);
 
   const load = useCallback(async () => {
     const [recipeRows, partRows, productRows] = await Promise.all([
@@ -51,6 +54,34 @@ export default function RecipeTable() {
     const timer = setTimeout(() => setMessage(""), 3000);
     return () => clearTimeout(timer);
   }, [message]);
+
+  const updateLayoutMetrics = useCallback(() => {
+    if (typeof document === "undefined") return;
+    const GAP = 12;
+    const appHeader = document.querySelector("[data-app-header='true']");
+    const headerHeight = appHeader?.getBoundingClientRect().height ?? 0;
+    const nextToolbarTop = `${Math.round(headerHeight + GAP)}px`;
+    setToolbarOffset((prev) => (prev === nextToolbarTop ? prev : nextToolbarTop));
+
+    if (tableScrollRef.current) {
+      const rect = tableScrollRef.current.getBoundingClientRect();
+      const footerGap = 32;
+      const available = Math.floor(window.innerHeight - rect.top - footerGap);
+      if (Number.isFinite(available) && available > 200) {
+        setScrollAreaHeight((prev) => (prev === available ? prev : available));
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    updateLayoutMetrics();
+    window.addEventListener("resize", updateLayoutMetrics);
+    return () => window.removeEventListener("resize", updateLayoutMetrics);
+  }, [updateLayoutMetrics]);
+
+  useEffect(() => {
+    updateLayoutMetrics();
+  }, [recipes.length, message, updateLayoutMetrics]);
 
   const productMaps = useMemo(() => {
     const byId = new Map();
@@ -251,7 +282,7 @@ export default function RecipeTable() {
   const deleteRow = async (id) => {
     const original = findOriginal(id);
     const label = original
-      ? `${original.productId || "?"} / ${original.partId || "?"}`
+      ? `${original.productId || "—"} / ${original.partId || "?"}`
       : id;
     if (!window.confirm(`レシピ「${label}」を削除しますか？`)) return;
     await db.recipes.delete(id);
@@ -271,13 +302,50 @@ export default function RecipeTable() {
   };
 
   const tableContainerStyle = {
-    ...card({ padding: "0" }),
-    overflowX: "auto"
+    ...card({ padding: "0" })
   };
+
+  const toolbarStyle = useMemo(
+    () => ({
+      position: "sticky",
+      top: toolbarOffset,
+      zIndex: 50,
+      background: palette.background,
+      padding: `${spacing(2)} 0`,
+      marginBottom: spacing(3),
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center"
+    }),
+    [toolbarOffset]
+  );
+
+  const stickyHeadCellStyle = useMemo(
+    () => ({
+      position: "sticky",
+      top: 0,
+      background: palette.surfaceAlt,
+      fontWeight: 600,
+      zIndex: 5,
+      borderBottom: `1px solid ${palette.border}`,
+      boxShadow: "inset 0 -1px 0 rgba(226, 232, 240, 1), 0 8px 18px rgba(15, 23, 42, 0.08)"
+    }),
+    []
+  );
+
+  const scrollAreaStyle = useMemo(
+    () => ({
+      position: "relative",
+      maxHeight: scrollAreaHeight ? `${scrollAreaHeight}px` : "60vh",
+      overflowY: "auto",
+      overflowX: "auto"
+    }),
+    [scrollAreaHeight]
+  );
 
   return (
     <div style={containerStyle}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: spacing(3) }}>
+      <header style={toolbarStyle}>
         <h3 style={{ margin: 0, fontWeight: typography.headingWeight }}>📜 レシピ一覧（セル編集）</h3>
         <button
           onClick={addRow}
@@ -302,80 +370,97 @@ export default function RecipeTable() {
       )}
 
       <div style={tableContainerStyle}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
-          <thead style={{ background: palette.surfaceAlt }}>
-            <tr>
-              {COLUMNS.map((column) => (
-                <th key={column.key} style={{ padding: `${spacing(2)} ${spacing(3)}`, textAlign: column.align, fontWeight: 600, borderBottom: `1px solid ${palette.border}` }}>
-                  {column.label}
-                </th>
-              ))}
-              <th style={{ padding: `${spacing(2)} ${spacing(3)}`, textAlign: "center", borderBottom: `1px solid ${palette.border}` }}>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {recipes.map((recipe, rowIndex) => (
-              <tr key={recipe.id} style={{ borderBottom: `1px solid ${palette.border}` }}>
-                {COLUMNS.map((column) => {
-                  const editableIndex = EDITABLE_KEYS.indexOf(column.key);
-                  const isEditable = editableIndex !== -1;
-                  return (
-                    <td key={column.key} style={{ padding: `${spacing(1.5)} ${spacing(2)}`, textAlign: column.align }}>
-                      {isEditable ? (
-                        <input
-                          ref={(node) => {
-                            const key = `${recipe.id}:${column.key}`;
-                            if (node) cellRefs.current[key] = node;
-                            else delete cellRefs.current[key];
-                          }}
-                          type={column.type === "number" ? "number" : "text"}
-                          value={displayValue(recipe.id, column.key)}
-                          onChange={(event) => setDraftValue(recipe.id, column.key, event.target.value)}
-                          onBlur={() => handleBlur(recipe.id, column.key)}
-                          onKeyDown={(event) => handleKeyDown(event, rowIndex, editableIndex)}
-                          style={{
-                            width: "100%",
-                            boxSizing: "border-box",
-                            padding: "6px 8px",
-                            border: `1px solid ${palette.border}`,
-                            borderRadius: spacing(1.5),
-                            fontSize: typography.size.sm,
-                            textAlign: column.align,
-                            background: palette.surfaceAlt
-                          }}
-                        />
-                      ) : (
-                        <span>{displayValue(recipe.id, column.key) || "—"}</span>
-                      )}
-                    </td>
-                  );
-                })}
-                <td style={{ padding: `${spacing(1.5)} ${spacing(2)}`, textAlign: "center" }}>
-                  <button
-                    onClick={() => deleteRow(recipe.id)}
+        <div ref={tableScrollRef} style={scrollAreaStyle}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+            <thead style={{ background: palette.surfaceAlt }}>
+              <tr>
+                {COLUMNS.map((column) => (
+                  <th
+                    key={column.key}
                     style={{
-                      padding: "6px 12px",
-                      border: `1px solid ${palette.danger}`,
-                      borderRadius: spacing(1.5),
-                      background: "#fee2e2",
-                      color: palette.danger,
-                      cursor: "pointer"
+                      ...stickyHeadCellStyle,
+                      padding: `${spacing(2)} ${spacing(3)}`,
+                      textAlign: column.align
                     }}
                   >
-                    削除
-                  </button>
-                </td>
+                    {column.label}
+                  </th>
+                ))}
+                <th
+                  style={{
+                    ...stickyHeadCellStyle,
+                    padding: `${spacing(2)} ${spacing(3)}`,
+                    textAlign: "center"
+                  }}
+                >
+                  操作
+                </th>
               </tr>
-            ))}
-            {recipes.length === 0 && (
-              <tr>
-                <td colSpan={COLUMNS.length + 1} style={{ padding: spacing(3), textAlign: "center", color: palette.textMuted }}>
-                  レシピデータがありません。CSV のインポートまたは行の追加を行ってください。
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {recipes.map((recipe, rowIndex) => (
+                <tr key={recipe.id} style={{ borderBottom: `1px solid ${palette.border}` }}>
+                  {COLUMNS.map((column) => {
+                    const editableIndex = EDITABLE_KEYS.indexOf(column.key);
+                    const isEditable = editableIndex !== -1;
+                    return (
+                      <td key={column.key} style={{ padding: `${spacing(1.5)} ${spacing(2)}`, textAlign: column.align }}>
+                        {isEditable ? (
+                          <input
+                            ref={(node) => {
+                              const key = `${recipe.id}:${column.key}`;
+                              if (node) cellRefs.current[key] = node;
+                              else delete cellRefs.current[key];
+                            }}
+                            type={column.type === "number" ? "number" : "text"}
+                            value={displayValue(recipe.id, column.key)}
+                            onChange={(event) => setDraftValue(recipe.id, column.key, event.target.value)}
+                            onBlur={() => handleBlur(recipe.id, column.key)}
+                            onKeyDown={(event) => handleKeyDown(event, rowIndex, editableIndex)}
+                            style={{
+                              width: "100%",
+                              boxSizing: "border-box",
+                              padding: "6px 8px",
+                              border: `1px solid ${palette.border}`,
+                              borderRadius: spacing(1.5),
+                              fontSize: typography.size.sm,
+                              textAlign: column.align,
+                              background: palette.surfaceAlt
+                            }}
+                          />
+                        ) : (
+                          <span>{displayValue(recipe.id, column.key) || "—"}</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td style={{ padding: `${spacing(1.5)} ${spacing(2)}`, textAlign: "center" }}>
+                    <button
+                      onClick={() => deleteRow(recipe.id)}
+                      style={{
+                        padding: "6px 12px",
+                        border: `1px solid ${palette.danger}`,
+                        borderRadius: spacing(1.5),
+                        background: "#fee2e2",
+                        color: palette.danger,
+                        cursor: "pointer"
+                      }}
+                    >
+                      削除
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {recipes.length === 0 && (
+                <tr>
+                  <td colSpan={COLUMNS.length + 1} style={{ padding: spacing(3), textAlign: "center", color: palette.textMuted }}>
+                    レシピデータがありません。CSV のインポートまたは行の追加を行ってください。
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
