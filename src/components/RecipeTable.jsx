@@ -296,6 +296,27 @@ export default function RecipeTable() {
     setMessage("空のレシピ行を追加しました");
   };
 
+  const cloneRecipe = async (id) => {
+    const original = findOriginal(id);
+    if (!original) return;
+    const payload = {
+      productId: original.productId ?? "",
+      productName: original.productName ?? "",
+      partId: original.partId ?? "",
+      partName: original.partName ?? "",
+      qty: Number(original.qty ?? 1)
+    };
+    try {
+      const newId = await db.recipes.add(payload);
+      setMessage("レシピを複製しました");
+      await load();
+      setPendingFocus({ id: newId, field: "productId" });
+    } catch (error) {
+      console.error(error);
+      setMessage("レシピの複製に失敗しました");
+    }
+  };
+
   const deleteRow = async (id) => {
     const original = findOriginal(id);
     const label = original ? `${original.productId || "?"} / ${original.partId || "?"}` : id;
@@ -492,12 +513,25 @@ export default function RecipeTable() {
                       </div>
                     );
                   })}
-                  <div style={{ display: "flex", justifyContent: "center" }}>
-                    <button
-                      onClick={() => deleteRow(recipe.id)}
-                      style={{
-                        padding: "6px 12px",
-                        border: `1px solid ${palette.danger}`,
+                <div style={{ display: "flex", justifyContent: "center", gap: spacing(1) }}>
+                  <button
+                    onClick={() => cloneRecipe(recipe.id)}
+                    style={{
+                      padding: "6px 12px",
+                      border: `1px solid ${palette.primaryDark}`,
+                      borderRadius: spacing(1.5),
+                      background: palette.primarySoft,
+                      color: palette.primaryDark,
+                      cursor: "pointer"
+                    }}
+                  >
+                    複製
+                  </button>
+                  <button
+                    onClick={() => deleteRow(recipe.id)}
+                    style={{
+                      padding: "6px 12px",
+                      border: `1px solid ${palette.danger}`,
                         borderRadius: spacing(1.5),
                         background: "#fee2e2",
                         color: palette.danger,

@@ -106,6 +106,31 @@ export default function PartsTable() {
 
   const findOriginal = (id) => parts.find((part) => part.id === id);
 
+  const incrementPartId = (value) => {
+    const match = String(value ?? "").match(/^(.*?)(\d+)$/);
+    if (match) {
+      const prefix = match[1];
+      const digits = match[2];
+      const next = String(Number(digits) + 1).padStart(digits.length, "0");
+      return `${prefix}${next}`;
+    }
+    return `${value || ""}1`;
+  };
+
+  const generateUniquePartId = useCallback(
+    (baseId) => {
+      const existing = new Set(parts.map((part) => part.id));
+      let candidate = incrementPartId(baseId);
+      let guard = 0;
+      while (existing.has(candidate) && guard < 1000) {
+        candidate = incrementPartId(candidate);
+        guard += 1;
+      }
+      return candidate;
+    },
+    [parts]
+  );
+
   const displayValue = (id, field) => {
     const draft = drafts[id]?.[field];
     if (draft !== undefined) return draft;
@@ -312,6 +337,26 @@ export default function PartsTable() {
     });
   };
 
+  const clonePart = async (id) => {
+    const original = findOriginal(id);
+    if (!original) return;
+    try {
+      const newId = generateUniquePartId(original.id);
+      await db.parts.add({
+        id: newId,
+        name: original.name ?? "",
+        stock: Number(original.stock ?? 0),
+        imageUrl: original.imageUrl ?? ""
+      });
+      setMessage(`部品「${original.name || id}」を複製しました`);
+      await load();
+      setPendingFocus({ id: newId, field: "name" });
+    } catch (error) {
+      console.error(error);
+      setMessage("部品の複製に失敗しました");
+    }
+  };
+
   const containerStyle = {
     maxWidth: layout.maxWidth,
     margin: "0 auto",
@@ -486,7 +531,20 @@ export default function PartsTable() {
                       />
                     </div>
                   ))}
-                  <div style={{ display: "flex", justifyContent: "center" }}>
+                  <div style={{ display: "flex", justifyContent: "center", gap: spacing(1) }}>
+                    <button
+                      onClick={() => clonePart(part.id)}
+                      style={{
+                        padding: "6px 12px",
+                        border: `1px solid ${palette.primaryDark}`,
+                        borderRadius: spacing(1.5),
+                        background: palette.primarySoft,
+                        color: palette.primaryDark,
+                        cursor: "pointer"
+                      }}
+                    >
+                      複製
+                    </button>
                     <button
                       onClick={() => deleteRow(part.id)}
                       style={{
