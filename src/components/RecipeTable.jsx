@@ -22,8 +22,10 @@ export default function RecipeTable() {
   const [pendingFocus, setPendingFocus] = useState(null);
   const [toolbarOffset, setToolbarOffset] = useState("0px");
   const [scrollAreaHeight, setScrollAreaHeight] = useState(null);
+  const [tableHeaderOffset, setTableHeaderOffset] = useState("0px");
   const cellRefs = useRef({});
   const tableScrollRef = useRef(null);
+  const toolbarRef = useRef(null);
 
   const load = useCallback(async () => {
     const [recipeRows, partRows, productRows] = await Promise.all([
@@ -36,7 +38,9 @@ export default function RecipeTable() {
     setProducts(productRows);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   useEffect(() => {
     if (!pendingFocus) return;
@@ -63,6 +67,11 @@ export default function RecipeTable() {
     const nextToolbarTop = `${Math.round(headerHeight + GAP)}px`;
     setToolbarOffset((prev) => (prev === nextToolbarTop ? prev : nextToolbarTop));
 
+    const toolbarHeight = toolbarRef.current?.getBoundingClientRect().height ?? 0;
+    const toolbarGap = 8;
+    const nextHeaderTop = `${Math.round(headerHeight + GAP + toolbarHeight + toolbarGap)}px`;
+    setTableHeaderOffset((prev) => (prev === nextHeaderTop ? prev : nextHeaderTop));
+
     if (tableScrollRef.current) {
       const rect = tableScrollRef.current.getBoundingClientRect();
       const footerGap = 32;
@@ -88,7 +97,9 @@ export default function RecipeTable() {
     const byInternal = new Map();
     for (const product of products) {
       byId.set(product.id, product);
-      if (product.internalId) byInternal.set(product.internalId, product);
+      if (product.internalId) {
+        byInternal.set(product.internalId, product);
+      }
     }
     return { byId, byInternal };
   }, [products]);
@@ -269,7 +280,13 @@ export default function RecipeTable() {
   };
 
   const addRow = async () => {
-    const newId = await db.recipes.add({ productId: "", productName: "", partId: "", partName: "", qty: 1 });
+    const newId = await db.recipes.add({
+      productId: "",
+      productName: "",
+      partId: "",
+      partName: "",
+      qty: 1
+    });
     await load();
     setDrafts((prev) => ({
       ...prev,
@@ -281,9 +298,7 @@ export default function RecipeTable() {
 
   const deleteRow = async (id) => {
     const original = findOriginal(id);
-    const label = original
-      ? `${original.productId || "—"} / ${original.partId || "?"}`
-      : id;
+    const label = original ? `${original.productId || "?"} / ${original.partId || "?"}` : id;
     if (!window.confirm(`レシピ「${label}」を削除しますか？`)) return;
     await db.recipes.delete(id);
     setMessage("レシピを削除しました");
@@ -320,17 +335,45 @@ export default function RecipeTable() {
     [toolbarOffset]
   );
 
-  const stickyHeadCellStyle = useMemo(
-    () => ({
-      position: "sticky",
-      top: 0,
-      background: palette.surfaceAlt,
-      fontWeight: 600,
-      zIndex: 5,
-      borderBottom: `1px solid ${palette.border}`,
-      boxShadow: "inset 0 -1px 0 rgba(226, 232, 240, 1), 0 8px 18px rgba(15, 23, 42, 0.08)"
-    }),
+  const gridTemplateColumns = useMemo(
+    () =>
+      [
+        "minmax(120px, 1fr)",
+        "minmax(160px, 1.1fr)",
+        "minmax(120px, 1fr)",
+        "minmax(160px, 1.1fr)",
+        "minmax(80px, 0.5fr)",
+        "minmax(90px, 0.5fr)"
+      ].join(" "),
     []
+  );
+
+  const headerRowStyle = useMemo(
+    () => ({
+      display: "grid",
+      gridTemplateColumns,
+      gap: spacing(2),
+      background: palette.surfaceAlt,
+      padding: `${spacing(2)} ${spacing(3)}`,
+      borderBottom: `1px solid ${palette.border}`,
+      boxShadow: "0 8px 18px rgba(15, 23, 42, 0.08)",
+      position: "sticky",
+      top: tableHeaderOffset,
+      zIndex: 40
+    }),
+    [gridTemplateColumns, tableHeaderOffset]
+  );
+
+  const rowStyle = useMemo(
+    () => ({
+      display: "grid",
+      gridTemplateColumns,
+      gap: spacing(2),
+      alignItems: "center",
+      padding: `${spacing(2)} ${spacing(3)}`,
+      borderBottom: `1px solid ${palette.border}`
+    }),
+    [gridTemplateColumns]
   );
 
   const scrollAreaStyle = useMemo(
@@ -338,14 +381,35 @@ export default function RecipeTable() {
       position: "relative",
       maxHeight: scrollAreaHeight ? `${scrollAreaHeight}px` : "60vh",
       overflowY: "auto",
-      overflowX: "auto"
+      overflowX: "hidden"
     }),
     [scrollAreaHeight]
   );
 
+  const gridWrapperStyle = useMemo(
+    () => ({
+      minWidth: 760
+    }),
+    []
+  );
+
+  const emptyStateStyle = {
+    padding: spacing(4),
+    textAlign: "center",
+    color: palette.textMuted
+  };
+
+  const cellPaddingStyle = {
+    display: "flex",
+    flexDirection: "column",
+    gap: spacing(1),
+    minHeight: "40px",
+    justifyContent: "center"
+  };
+
   return (
     <div style={containerStyle}>
-      <header style={toolbarStyle}>
+      <header ref={toolbarRef} style={toolbarStyle}>
         <h3 style={{ margin: 0, fontWeight: typography.headingWeight }}>📜 レシピ一覧（セル編集）</h3>
         <button
           onClick={addRow}
@@ -364,47 +428,41 @@ export default function RecipeTable() {
       </header>
 
       {message && (
-        <div style={{ marginBottom: spacing(3), padding: `${spacing(2)} ${spacing(3)}`, background: "#fef3c7", border: `1px solid ${palette.warning}33`, borderRadius: spacing(2), color: "#92400e" }}>
+        <div
+          style={{
+            marginBottom: spacing(3),
+            padding: `${spacing(2)} ${spacing(3)}`,
+            background: "#fef3c7",
+            border: `1px solid ${palette.warning}33`,
+            borderRadius: spacing(2),
+            color: "#92400e"
+          }}
+        >
           {message}
         </div>
       )}
 
       <div style={tableContainerStyle}>
-        <div ref={tableScrollRef} style={scrollAreaStyle}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
-            <thead style={{ background: palette.surfaceAlt }}>
-              <tr>
-                {COLUMNS.map((column) => (
-                  <th
-                    key={column.key}
-                    style={{
-                      ...stickyHeadCellStyle,
-                      padding: `${spacing(2)} ${spacing(3)}`,
-                      textAlign: column.align
-                    }}
-                  >
-                    {column.label}
-                  </th>
-                ))}
-                <th
-                  style={{
-                    ...stickyHeadCellStyle,
-                    padding: `${spacing(2)} ${spacing(3)}`,
-                    textAlign: "center"
-                  }}
-                >
-                  操作
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+        <div style={{ overflowX: "auto" }}>
+          <div style={gridWrapperStyle}>
+            <div style={headerRowStyle}>
+              {COLUMNS.map((column) => (
+                <div key={column.key} style={{ fontWeight: 600, fontSize: typography.size.sm, textAlign: column.align }}>
+                  {column.label}
+                </div>
+              ))}
+              <div style={{ fontWeight: 600, fontSize: typography.size.sm, textAlign: "center" }}>操作</div>
+            </div>
+          </div>
+          <div ref={tableScrollRef} style={scrollAreaStyle}>
+            <div style={gridWrapperStyle}>
               {recipes.map((recipe, rowIndex) => (
-                <tr key={recipe.id} style={{ borderBottom: `1px solid ${palette.border}` }}>
+                <div key={recipe.id} style={rowStyle}>
                   {COLUMNS.map((column) => {
                     const editableIndex = EDITABLE_KEYS.indexOf(column.key);
                     const isEditable = editableIndex !== -1;
                     return (
-                      <td key={column.key} style={{ padding: `${spacing(1.5)} ${spacing(2)}`, textAlign: column.align }}>
+                      <div key={column.key} style={{ ...cellPaddingStyle, textAlign: column.align }}>
                         {isEditable ? (
                           <input
                             ref={(node) => {
@@ -429,12 +487,12 @@ export default function RecipeTable() {
                             }}
                           />
                         ) : (
-                          <span>{displayValue(recipe.id, column.key) || "—"}</span>
+                          <span>{displayValue(recipe.id, column.key) || "-"}</span>
                         )}
-                      </td>
+                      </div>
                     );
                   })}
-                  <td style={{ padding: `${spacing(1.5)} ${spacing(2)}`, textAlign: "center" }}>
+                  <div style={{ display: "flex", justifyContent: "center" }}>
                     <button
                       onClick={() => deleteRow(recipe.id)}
                       style={{
@@ -448,18 +506,13 @@ export default function RecipeTable() {
                     >
                       削除
                     </button>
-                  </td>
-                </tr>
+                  </div>
+                </div>
               ))}
-              {recipes.length === 0 && (
-                <tr>
-                  <td colSpan={COLUMNS.length + 1} style={{ padding: spacing(3), textAlign: "center", color: palette.textMuted }}>
-                    レシピデータがありません。CSV のインポートまたは行の追加を行ってください。
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+
+              {recipes.length === 0 && <div style={emptyStateStyle}>レシピデータがありません。CSV のインポートまたは行の追加を行ってください。</div>}
+            </div>
+          </div>
         </div>
       </div>
     </div>

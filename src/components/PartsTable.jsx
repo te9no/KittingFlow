@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { db } from "../db";
 import { card, layout, palette, spacing, typography } from "../styles/theme";
 
@@ -17,13 +17,20 @@ export default function PartsTable() {
   const [drafts, setDrafts] = useState({});
   const [message, setMessage] = useState("");
   const [pendingFocus, setPendingFocus] = useState(null);
+  const [toolbarOffset, setToolbarOffset] = useState("0px");
+  const [scrollAreaHeight, setScrollAreaHeight] = useState(null);
+  const [tableHeaderOffset, setTableHeaderOffset] = useState("0px");
   const cellRefs = useRef({});
+  const tableScrollRef = useRef(null);
+  const toolbarRef = useRef(null);
 
   const load = useCallback(async () => {
     setParts(await db.parts.toArray());
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   useEffect(() => {
     if (!pendingFocus) return;
@@ -41,6 +48,39 @@ export default function PartsTable() {
     const timer = setTimeout(() => setMessage(""), 3000);
     return () => clearTimeout(timer);
   }, [message]);
+
+  const updateLayoutMetrics = useCallback(() => {
+    if (typeof document === "undefined") return;
+    const GAP = 12;
+    const appHeader = document.querySelector("[data-app-header='true']");
+    const headerHeight = appHeader?.getBoundingClientRect().height ?? 0;
+    const nextToolbarTop = `${Math.round(headerHeight + GAP)}px`;
+    setToolbarOffset((prev) => (prev === nextToolbarTop ? prev : nextToolbarTop));
+
+    const toolbarHeight = toolbarRef.current?.getBoundingClientRect().height ?? 0;
+    const toolbarGap = 8;
+    const nextHeaderTop = `${Math.round(headerHeight + GAP + toolbarHeight + toolbarGap)}px`;
+    setTableHeaderOffset((prev) => (prev === nextHeaderTop ? prev : nextHeaderTop));
+
+    if (tableScrollRef.current) {
+      const rect = tableScrollRef.current.getBoundingClientRect();
+      const footerGap = 32;
+      const available = Math.floor(window.innerHeight - rect.top - footerGap);
+      if (Number.isFinite(available) && available > 200) {
+        setScrollAreaHeight((prev) => (prev === available ? prev : available));
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    updateLayoutMetrics();
+    window.addEventListener("resize", updateLayoutMetrics);
+    return () => window.removeEventListener("resize", updateLayoutMetrics);
+  }, [updateLayoutMetrics]);
+
+  useEffect(() => {
+    updateLayoutMetrics();
+  }, [parts.length, message, updateLayoutMetrics]);
 
   const setDraftValue = (id, field, value) => {
     setDrafts((prev) => ({
@@ -72,8 +112,7 @@ export default function PartsTable() {
     const original = findOriginal(id);
     if (!original) return "";
     if (field === "stock") {
-      if (original.stock === null || original.stock === undefined) return "";
-      return String(original.stock);
+      return original.stock == null ? "" : String(original.stock);
     }
     if (field === "id" && original.id.startsWith(PLACEHOLDER_PREFIX)) {
       return "";
@@ -148,11 +187,11 @@ export default function PartsTable() {
       await load();
       setDrafts((prev) => {
         const next = { ...(prev || {}) };
-        const row = { ...(next[currentId] || {}) };
-        delete row.id;
+        const rowDraft = { ...(next[currentId] || {}) };
+        delete rowDraft.id;
         delete next[currentId];
-        if (Object.keys(row).length > 0) {
-          next[trimmed] = { ...(next[trimmed] || {}), ...row };
+        if (Object.keys(rowDraft).length > 0) {
+          next[trimmed] = { ...(next[trimmed] || {}), ...rowDraft };
         }
         return next;
       });
@@ -280,13 +319,98 @@ export default function PartsTable() {
   };
 
   const tableContainerStyle = {
-    ...card({ padding: "0" }),
-    overflowX: "auto"
+    ...card({ padding: "0" })
+  };
+
+  const toolbarStyle = useMemo(
+    () => ({
+      position: "sticky",
+      top: toolbarOffset,
+      zIndex: 50,
+      background: palette.background,
+      padding: `${spacing(2)} 0`,
+      marginBottom: spacing(3),
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center"
+    }),
+    [toolbarOffset]
+  );
+
+  const gridTemplateColumns = useMemo(
+    () =>
+      [
+        "minmax(140px, 1fr)",
+        "minmax(180px, 1.1fr)",
+        "minmax(110px, 0.7fr)",
+        "minmax(200px, 1.3fr)",
+        "minmax(90px, 0.5fr)"
+      ].join(" "),
+    []
+  );
+
+  const headerRowStyle = useMemo(
+    () => ({
+      display: "grid",
+      gridTemplateColumns,
+      gap: spacing(2),
+      background: palette.surfaceAlt,
+      padding: `${spacing(2)} ${spacing(3)}`,
+      borderBottom: `1px solid ${palette.border}`,
+      boxShadow: "0 8px 18px rgba(15, 23, 42, 0.08)",
+      position: "sticky",
+      top: tableHeaderOffset,
+      zIndex: 40
+    }),
+    [gridTemplateColumns, tableHeaderOffset]
+  );
+
+  const rowStyle = useMemo(
+    () => ({
+      display: "grid",
+      gridTemplateColumns,
+      gap: spacing(2),
+      alignItems: "center",
+      padding: `${spacing(2)} ${spacing(3)}`,
+      borderBottom: `1px solid ${palette.border}`
+    }),
+    [gridTemplateColumns]
+  );
+
+  const scrollAreaStyle = useMemo(
+    () => ({
+      position: "relative",
+      maxHeight: scrollAreaHeight ? `${scrollAreaHeight}px` : "60vh",
+      overflowY: "auto",
+      overflowX: "hidden"
+    }),
+    [scrollAreaHeight]
+  );
+
+  const gridWrapperStyle = useMemo(
+    () => ({
+      minWidth: 720
+    }),
+    []
+  );
+
+  const emptyStateStyle = {
+    padding: spacing(4),
+    textAlign: "center",
+    color: palette.textMuted
+  };
+
+  const cellPaddingStyle = {
+    display: "flex",
+    flexDirection: "column",
+    gap: spacing(1),
+    minHeight: "40px",
+    justifyContent: "center"
   };
 
   return (
     <div style={containerStyle}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: spacing(3) }}>
+      <header ref={toolbarRef} style={toolbarStyle}>
         <h3 style={{ margin: 0, fontWeight: typography.headingWeight }}>🧩 部品一覧（セル編集）</h3>
         <button
           onClick={addRow}
@@ -305,78 +429,85 @@ export default function PartsTable() {
       </header>
 
       {message && (
-        <div style={{ marginBottom: spacing(3), padding: `${spacing(2)} ${spacing(3)}`, background: palette.primarySoft, border: `1px solid ${palette.primaryDark}1a`, borderRadius: spacing(2), color: palette.primaryDark }}>
+        <div
+          style={{
+            marginBottom: spacing(3),
+            padding: `${spacing(2)} ${spacing(3)}`,
+            background: palette.primarySoft,
+            border: `1px solid ${palette.primaryDark}1a`,
+            borderRadius: spacing(2),
+            color: palette.primaryDark
+          }}
+        >
           {message}
         </div>
       )}
 
       <div style={tableContainerStyle}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 680 }}>
-          <thead style={{ background: palette.surfaceAlt }}>
-            <tr>
+        <div style={{ overflowX: "auto" }}>
+          <div style={gridWrapperStyle}>
+            <div style={headerRowStyle}>
               {COLUMNS.map((column) => (
-                <th key={column.key} style={{ padding: `${spacing(2)} ${spacing(3)}`, textAlign: column.align, fontWeight: 600, borderBottom: `1px solid ${palette.border}` }}>
+                <div key={column.key} style={{ fontWeight: 600, fontSize: typography.size.sm, textAlign: column.align }}>
                   {column.label}
-                </th>
+                </div>
               ))}
-              <th style={{ padding: `${spacing(2)} ${spacing(3)}`, textAlign: "center", borderBottom: `1px solid ${palette.border}` }}>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {parts.map((part, rowIndex) => (
-              <tr key={part.id} style={{ borderBottom: `1px solid ${palette.border}` }}>
-                {COLUMNS.map((column, columnIndex) => (
-                  <td key={column.key} style={{ padding: `${spacing(1.5)} ${spacing(2)}`, textAlign: column.align, verticalAlign: "middle" }}>
-                    <input
-                      ref={(node) => {
-                        const key = `${part.id}:${column.key}`;
-                        if (node) cellRefs.current[key] = node;
-                        else delete cellRefs.current[key];
-                      }}
-                      type={column.type === "number" ? "number" : "text"}
-                      value={displayValue(part.id, column.key)}
-                      onChange={(event) => setDraftValue(part.id, column.key, event.target.value)}
-                      onBlur={() => handleBlur(part.id, column.key)}
-                      onKeyDown={(event) => handleKeyDown(event, rowIndex, columnIndex)}
+              <div style={{ fontWeight: 600, fontSize: typography.size.sm, textAlign: "center" }}>操作</div>
+            </div>
+          </div>
+
+          <div ref={tableScrollRef} style={scrollAreaStyle}>
+            <div style={gridWrapperStyle}>
+              {parts.map((part, rowIndex) => (
+                <div key={part.id} style={rowStyle}>
+                  {COLUMNS.map((column, columnIndex) => (
+                    <div key={column.key} style={{ ...cellPaddingStyle, textAlign: column.align }}>
+                      <input
+                        ref={(node) => {
+                          const key = `${part.id}:${column.key}`;
+                          if (node) cellRefs.current[key] = node;
+                          else delete cellRefs.current[key];
+                        }}
+                        type={column.type === "number" ? "number" : "text"}
+                        value={displayValue(part.id, column.key)}
+                        onChange={(event) => setDraftValue(part.id, column.key, event.target.value)}
+                        onBlur={() => handleBlur(part.id, column.key)}
+                        onKeyDown={(event) => handleKeyDown(event, rowIndex, columnIndex)}
+                        style={{
+                          width: "100%",
+                          boxSizing: "border-box",
+                          padding: "6px 8px",
+                          border: `1px solid ${palette.border}`,
+                          borderRadius: spacing(1.5),
+                          fontSize: typography.size.sm,
+                          textAlign: column.align,
+                          background: palette.surfaceAlt
+                        }}
+                      />
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", justifyContent: "center" }}>
+                    <button
+                      onClick={() => deleteRow(part.id)}
                       style={{
-                        width: "100%",
-                        boxSizing: "border-box",
-                        padding: "6px 8px",
-                        border: `1px solid ${palette.border}`,
+                        padding: "6px 12px",
+                        border: `1px solid ${palette.danger}`,
                         borderRadius: spacing(1.5),
-                        fontSize: typography.size.sm,
-                        textAlign: column.align,
-                        background: palette.surfaceAlt
+                        background: "#fee2e2",
+                        color: palette.danger,
+                        cursor: "pointer"
                       }}
-                    />
-                  </td>
-                ))}
-                <td style={{ padding: `${spacing(1.5)} ${spacing(2)}`, textAlign: "center" }}>
-                  <button
-                    onClick={() => deleteRow(part.id)}
-                    style={{
-                      padding: "6px 12px",
-                      border: `1px solid ${palette.danger}`,
-                      borderRadius: spacing(1.5),
-                      background: "#fee2e2",
-                      color: palette.danger,
-                      cursor: "pointer"
-                    }}
-                  >
-                    削除
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {parts.length === 0 && (
-              <tr>
-                <td colSpan={COLUMNS.length + 1} style={{ padding: spacing(3), textAlign: "center", color: palette.textMuted }}>
-                  部品データがありません。CSV のインポートまたは行の追加を行ってください。
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                    >
+                      削除
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              {parts.length === 0 && <div style={emptyStateStyle}>部品データがありません。CSV のインポートまたは行の追加を行ってください。</div>}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
