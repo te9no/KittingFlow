@@ -15,6 +15,9 @@ const t = {
   qty: "\u5fc5\u8981\u6570",
   choosePart: "\u90e8\u54c1\u3092\u9078\u3076",
   choosePartHelp: "\u30af\u30ea\u30c3\u30af\u3067\u9078\u629e\u3001\u307e\u305f\u306f\u30c9\u30e9\u30c3\u30b0\u3057\u3066\u53f3\u5074\u306e\u30b0\u30eb\u30fc\u30d7\u3078\u5165\u308c\u307e\u3059\u3002",
+  selectedPart: "\u9078\u629e\u4e2d",
+  searchParts: "\u90e8\u54c1ID\u30fb\u90e8\u54c1\u540d\u3067\u691c\u7d22",
+  searchGroups: "\u88fd\u54c1ID\u30fb\u88fd\u54c1\u540d\u3067\u691c\u7d22",
   editGroups: "\u88fd\u54c1\u30b0\u30eb\u30fc\u30d7\u3092\u7de8\u96c6\u3059\u308b",
   newGroup: "\u65b0\u3057\u3044\u88fd\u54c1\u30b0\u30eb\u30fc\u30d7",
   newGroupHelp: "\u88fd\u54c1ID\u3068\u540d\u524d\u3092\u5165\u529b\u3057\u3066\u3001\u7a7a\u306e\u30b0\u30eb\u30fc\u30d7\u3092\u4f5c\u6210\u3057\u307e\u3059\u3002",
@@ -23,6 +26,8 @@ const t = {
   rename: "\u540d\u524d\u3092\u5909\u66f4",
   save: "\u4fdd\u5b58",
   duplicateGroup: "\u3053\u306e\u30b0\u30eb\u30fc\u30d7\u3092\u8907\u88fd",
+  details: "\u8a73\u7d30",
+  close: "\u9589\u3058\u308b",
   duplicate: "\u8907\u88fd",
   registeredParts: "\u767b\u9332\u90e8\u54c1",
   deleteGroup: "\u30b0\u30eb\u30fc\u30d7\u524a\u9664",
@@ -66,6 +71,9 @@ export default function RecipeTable() {
   const [newGroupName, setNewGroupName] = useState("");
   const [groupNameDrafts, setGroupNameDrafts] = useState({});
   const [duplicateDrafts, setDuplicateDrafts] = useState({});
+  const [partSearch, setPartSearch] = useState("");
+  const [groupSearch, setGroupSearch] = useState("");
+  const [expandedGroupIds, setExpandedGroupIds] = useState({});
 
   const load = useCallback(async () => {
     const [recipeRows, partRows, productRows] = await Promise.all([
@@ -141,6 +149,27 @@ export default function RecipeTable() {
   }, [products, recipes]);
 
   const partOptions = useMemo(() => parts.map((part) => part.id).sort(), [parts]);
+
+  const filteredParts = useMemo(() => {
+    const query = partSearch.trim().toLowerCase();
+    if (!query) return parts;
+    return parts.filter((part) =>
+      `${part.id || ""} ${part.name || ""}`.toLowerCase().includes(query)
+    );
+  }, [parts, partSearch]);
+
+  const filteredProductGroups = useMemo(() => {
+    const query = groupSearch.trim().toLowerCase();
+    if (!query) return productGroups;
+    return productGroups.filter((group) =>
+      `${group.productId || ""} ${group.productName || ""}`.toLowerCase().includes(query)
+    );
+  }, [productGroups, groupSearch]);
+
+  const selectedPart = useMemo(
+    () => partMap.get(selectedPartId) || null,
+    [partMap, selectedPartId]
+  );
 
   const getPartName = useCallback(
     (partId) => partMap.get(partId)?.name || partId || "-",
@@ -244,6 +273,7 @@ export default function RecipeTable() {
     await db.products.add({ id: productId, name: productName, internalId: productId, status: "template" });
     setNewGroupId("");
     setNewGroupName("");
+    setExpandedGroupIds((prev) => ({ ...prev, [productId]: true }));
     setMessage(`\u88fd\u54c1\u30b0\u30eb\u30fc\u30d7\u300c${productName}\u300d\u3092\u8ffd\u52a0\u3057\u307e\u3057\u305f\u3002`);
     await load();
   };
@@ -313,7 +343,23 @@ export default function RecipeTable() {
       delete next[group.productId];
       return next;
     });
+    setExpandedGroupIds((prev) => ({ ...prev, [productId]: true }));
     setMessage(`\u88fd\u54c1\u30b0\u30eb\u30fc\u30d7\u300c${group.productName}\u300d\u3092\u300c${productName || productId}\u300d\u3068\u3057\u3066\u8907\u88fd\u3057\u307e\u3057\u305f\u3002`);
+    await load();
+  };
+
+  const toggleGroup = (productId) => {
+    setExpandedGroupIds((prev) => ({ ...prev, [productId]: !prev[productId] }));
+  };
+
+  const updateRecipeQuantity = async (recipe, delta) => {
+    const nextQty = Number(recipe.qty || 0) + delta;
+    if (nextQty < 1) {
+      setMessage("\u5fc5\u8981\u6570\u306f 1 \u672a\u6e80\u306b\u3067\u304d\u307e\u305b\u3093\u3002");
+      return;
+    }
+    await db.recipes.update(recipe.id, { qty: nextQty });
+    setMessage(`${getPartName(recipe.partId)} \u306e\u5fc5\u8981\u6570\u3092 ${nextQty} \u306b\u5909\u66f4\u3057\u307e\u3057\u305f\u3002`);
     await load();
   };
 
@@ -351,12 +397,13 @@ export default function RecipeTable() {
     addPartToProduct(productId, partId);
   };
 
-  const containerStyle = { maxWidth: layout.maxWidth, margin: "0 auto", padding: spacing(4) };
+  const containerStyle = { maxWidth: editMode === "drag" ? "min(1600px, calc(100vw - 24px))" : layout.maxWidth, margin: "0 auto", padding: spacing(4) };
   const toolbarStyle = { position: "sticky", top: 88, zIndex: 20, display: "flex", justifyContent: "space-between", alignItems: "center", gap: spacing(3), padding: `${spacing(2)} 0`, marginBottom: spacing(3), background: palette.background };
   const buttonStyle = { padding: "8px 14px", borderRadius: spacing(2), border: `1px solid ${palette.primaryDark}`, background: palette.primary, color: "#fff", fontWeight: 700, cursor: "pointer" };
   const modeToggleStyle = { display: "inline-flex", padding: 4, border: `1px solid ${palette.border}`, borderRadius: spacing(2.5), background: palette.surface, boxShadow: "0 1px 4px rgba(15, 23, 42, 0.08)" };
   const modeButtonStyle = (active) => ({ padding: "7px 12px", border: 0, borderRadius: spacing(2), background: active ? palette.primary : "transparent", color: active ? "#fff" : palette.textMuted, fontWeight: 700, cursor: "pointer" });
-  const quickEditLayoutStyle = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: spacing(4), alignItems: "start" };
+  const quickEditLayoutStyle = { display: "grid", gridTemplateColumns: "minmax(280px, 360px) minmax(0, 1fr)", gap: spacing(4), alignItems: "start" };
+  const partSidebarStyle = { position: "sticky", top: 156, alignSelf: "start", maxHeight: "calc(100vh - 180px)", display: "grid", gridTemplateRows: "auto auto 1fr", gap: spacing(2) };
   const partChipStyle = { display: "grid", gap: spacing(0.5), padding: `${spacing(2)} ${spacing(3)}`, border: `1px solid ${palette.border}`, borderRadius: spacing(2), background: palette.surfaceAlt, cursor: "grab" };
   const selectedPartChipStyle = { borderColor: palette.primary, background: palette.primarySoft, boxShadow: "0 0 0 2px rgba(37, 99, 235, 0.12)" };
   const smallInputStyle = { padding: "7px 9px", border: `1px solid ${palette.border}`, borderRadius: spacing(1.5), background: palette.surfaceAlt, color: palette.text, minWidth: 0 };
@@ -371,6 +418,7 @@ export default function RecipeTable() {
   const mutedHelpStyle = { margin: 0, color: palette.textMuted, fontSize: typography.size.sm };
   const productGroupStyle = (isActive = false) => ({ border: `1px solid ${isActive ? palette.primary : palette.border}`, borderRadius: spacing(3), padding: spacing(3), background: isActive ? "#eff6ff" : "#fbfdff", minHeight: 130, boxShadow: isActive ? "0 12px 28px rgba(37, 99, 235, 0.12)" : "0 4px 16px rgba(15, 23, 42, 0.06)" });
   const tableGridStyle = { display: "grid", gridTemplateColumns: "minmax(110px, 1fr) minmax(140px, 1.1fr) minmax(110px, 1fr) minmax(140px, 1.1fr) minmax(80px, 0.5fr) minmax(120px, 0.7fr)", gap: spacing(2), alignItems: "center" };
+  const tinyButtonStyle = { padding: "2px 8px", border: `1px solid ${palette.border}`, borderRadius: spacing(1), background: palette.surface, color: palette.text, cursor: "pointer", fontWeight: 800 };
 
   return (
     <div style={containerStyle}>
@@ -391,23 +439,33 @@ export default function RecipeTable() {
       {message && <div style={{ marginBottom: spacing(3), padding: `${spacing(2)} ${spacing(3)}`, background: "#fef3c7", border: `1px solid ${palette.warning}55`, borderRadius: spacing(2), color: "#92400e" }}>{message}</div>}
 
       {editMode === "drag" && (
-        <section style={{ ...card(), marginBottom: spacing(4) }}>
+        <section style={{ ...card(), marginBottom: spacing(4), overflow: "visible" }}>
           <h4 style={{ margin: 0, fontSize: typography.size.lg }}>{t.dragEdit}</h4>
           <p style={{ margin: `${spacing(1)} 0 ${spacing(4)}`, color: palette.textMuted }}>{t.dragHelp}</p>
           <div style={quickEditLayoutStyle}>
-            <div>
+            <aside style={partSidebarStyle}>
               <div style={sectionTitleStyle}><span style={sectionBadgeStyle}>1</span><span>{t.choosePart}</span></div>
-              <p style={mutedHelpStyle}>{t.choosePartHelp}</p>
-              <div style={{ display: "grid", gap: spacing(2), marginTop: spacing(2), maxHeight: 380, overflowY: "auto" }}>
-                {parts.map((part) => (
+              <div style={{ display: "grid", gap: spacing(2), padding: spacing(3), border: `1px solid ${palette.border}`, borderRadius: spacing(3), background: palette.surface }}>
+                <input value={partSearch} onChange={(event) => setPartSearch(event.target.value)} placeholder={t.searchParts} style={smallInputStyle} />
+                {selectedPart ? (
+                  <div style={{ padding: spacing(2), border: `1px solid ${palette.primary}`, borderRadius: spacing(2), background: palette.primarySoft }}>
+                    <b>{t.selectedPart}: {selectedPart.name || selectedPart.id}</b>
+                    <div style={{ color: palette.textMuted, fontSize: typography.size.sm }}>{selectedPart.id} / {t.stock} {Number(selectedPart.stock || 0)}</div>
+                  </div>
+                ) : (
+                  <p style={mutedHelpStyle}>{t.choosePartHelp}</p>
+                )}
+              </div>
+              <div style={{ display: "grid", gap: spacing(2), overflowY: "auto", paddingRight: spacing(1) }}>
+                {filteredParts.map((part) => (
                   <div key={part.id} draggable onClick={() => setSelectedPartId(part.id)} onDragStart={(event) => handleDragStart(event, part.id)} onDragEnd={() => setDraggingPartId("")} style={{ ...partChipStyle, ...(selectedPartId === part.id ? selectedPartChipStyle : {}) }} title={t.addSelectedPart}>
                     <span style={{ fontWeight: 700 }}>{part.name || part.id}</span>
                     <span style={{ color: palette.textMuted, fontSize: typography.size.sm }}>{part.id} / {t.stock} {Number(part.stock || 0)}</span>
                   </div>
                 ))}
-                {parts.length === 0 && <p style={{ color: palette.textMuted }}>{t.noParts}</p>}
+                {filteredParts.length === 0 && <p style={{ color: palette.textMuted }}>{t.noParts}</p>}
               </div>
-            </div>
+            </aside>
 
             <div>
               <div style={sectionTitleStyle}><span style={sectionBadgeStyle}>2</span><span>{t.editGroups}</span></div>
@@ -418,50 +476,68 @@ export default function RecipeTable() {
                   <input value={newGroupName} onChange={(event) => setNewGroupName(event.target.value)} placeholder={t.productName} style={smallInputStyle} />
                   <button type="button" onClick={addProductGroup} style={secondaryButtonStyle}>{t.add}</button>
                 </div>
+                <input value={groupSearch} onChange={(event) => setGroupSearch(event.target.value)} placeholder={t.searchGroups} style={smallInputStyle} />
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: spacing(3), marginTop: spacing(2) }}>
-                {productGroups.map((group) => (
-                  <div key={group.productId} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleDrop(event, group.productId)} style={productGroupStyle(Boolean(draggingPartId))}>
-                    <div style={groupCardHeaderStyle}>
-                      <div><div style={{ fontWeight: 900, fontSize: typography.size.lg }}>{group.productName}</div><div style={{ color: palette.textMuted, fontSize: typography.size.sm }}>{group.productId}</div></div>
-                      <button type="button" onClick={() => addPartToProduct(group.productId, selectedPartId)} disabled={!selectedPartId} style={{ padding: "7px 11px", border: `1px solid ${selectedPartId ? palette.primaryDark : palette.border}`, borderRadius: spacing(1.5), background: selectedPartId ? palette.primary : palette.surfaceAlt, color: selectedPartId ? "#fff" : palette.textMuted, cursor: selectedPartId ? "pointer" : "not-allowed", fontWeight: 800, whiteSpace: "nowrap" }}>{t.addSelectedPart}</button>
-                    </div>
-                    <div style={{ display: "grid", gap: spacing(2), margin: `${spacing(3)} 0` }}>
-                      <div style={groupActionPanelStyle}>
-                        <b>{t.rename}</b>
-                        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: spacing(2) }}>
-                          <input value={groupNameDrafts[group.productId] ?? group.productName} onChange={(event) => setGroupNameDraft(group.productId, event.target.value)} placeholder={t.productName} style={smallInputStyle} />
-                          <button type="button" onClick={() => updateProductGroupName(group)} style={secondaryButtonStyle}>{t.save}</button>
-                        </div>
+              <div style={{ display: "grid", gap: spacing(3), marginTop: spacing(2) }}>
+                {filteredProductGroups.map((group) => {
+                  const expanded = Boolean(expandedGroupIds[group.productId]);
+                  return (
+                    <div key={group.productId} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleDrop(event, group.productId)} style={productGroupStyle(Boolean(draggingPartId))}>
+                      <div style={groupCardHeaderStyle}>
+                        <button type="button" onClick={() => toggleGroup(group.productId)} style={{ textAlign: "left", border: 0, background: "transparent", padding: 0, cursor: "pointer", color: palette.text }}>
+                          <div style={{ fontWeight: 900, fontSize: typography.size.lg }}>{expanded ? "▾" : "▸"} {group.productName}</div>
+                          <div style={{ color: palette.textMuted, fontSize: typography.size.sm }}>{group.productId} / {group.recipes.length} {t.registeredParts}</div>
+                        </button>
+                        <button type="button" onClick={() => addPartToProduct(group.productId, selectedPartId)} disabled={!selectedPartId} style={{ padding: "7px 11px", border: `1px solid ${selectedPartId ? palette.primaryDark : palette.border}`, borderRadius: spacing(1.5), background: selectedPartId ? palette.primary : palette.surfaceAlt, color: selectedPartId ? "#fff" : palette.textMuted, cursor: selectedPartId ? "pointer" : "not-allowed", fontWeight: 800, whiteSpace: "nowrap" }}>{t.addSelectedPart}</button>
                       </div>
-                      <div style={groupActionPanelStyle}>
-                        <b>{t.duplicateGroup}</b>
-                        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 0.9fr) minmax(0, 1fr) auto", gap: spacing(2) }}>
-                          <input value={duplicateDrafts[group.productId]?.id ?? ""} onChange={(event) => setDuplicateDraft(group.productId, "id", event.target.value)} placeholder={`${group.productId}-COPY`} style={smallInputStyle} />
-                          <input value={duplicateDrafts[group.productId]?.name ?? ""} onChange={(event) => setDuplicateDraft(group.productId, "name", event.target.value)} placeholder={`${group.productName} Copy`} style={smallInputStyle} />
-                          <button type="button" onClick={() => duplicateProductGroup(group)} style={secondaryButtonStyle}>{t.duplicate}</button>
+
+                      {expanded ? (
+                        <div style={{ display: "grid", gap: spacing(2), marginTop: spacing(3) }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: spacing(2) }}>
+                            <div style={groupActionPanelStyle}>
+                              <b>{t.rename}</b>
+                              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: spacing(2) }}>
+                                <input value={groupNameDrafts[group.productId] ?? group.productName} onChange={(event) => setGroupNameDraft(group.productId, event.target.value)} placeholder={t.productName} style={smallInputStyle} />
+                                <button type="button" onClick={() => updateProductGroupName(group)} style={secondaryButtonStyle}>{t.save}</button>
+                              </div>
+                            </div>
+                            <div style={groupActionPanelStyle}>
+                              <b>{t.duplicateGroup}</b>
+                              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 0.9fr) minmax(0, 1fr) auto", gap: spacing(2) }}>
+                                <input value={duplicateDrafts[group.productId]?.id ?? ""} onChange={(event) => setDuplicateDraft(group.productId, "id", event.target.value)} placeholder={`${group.productId}-COPY`} style={smallInputStyle} />
+                                <input value={duplicateDrafts[group.productId]?.name ?? ""} onChange={(event) => setDuplicateDraft(group.productId, "name", event.target.value)} placeholder={`${group.productName} Copy`} style={smallInputStyle} />
+                                <button type="button" onClick={() => duplicateProductGroup(group)} style={secondaryButtonStyle}>{t.duplicate}</button>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div style={{ display: "grid", gap: spacing(1) }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: spacing(2), marginTop: spacing(1) }}><b>{t.registeredParts}</b><button type="button" onClick={() => deleteProductGroup(group)} style={dangerButtonStyle}>{t.deleteGroup}</button></div>
+                            {group.recipes.map((recipe) => (
+                              <div key={recipe.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto auto auto", alignItems: "center", gap: spacing(2), padding: `${spacing(1)} 0`, borderBottom: `1px solid ${palette.border}`, fontSize: typography.size.sm }}>
+                                <span>{getPartName(recipe.partId)}</span>
+                                <button type="button" onClick={() => updateRecipeQuantity(recipe, -1)} style={tinyButtonStyle}>-</button>
+                                <b>x {Number(recipe.qty || 0)}</b>
+                                <button type="button" onClick={() => updateRecipeQuantity(recipe, 1)} style={tinyButtonStyle}>+</button>
+                                <button type="button" onClick={() => removeRecipeFromGroup(recipe)} style={{ padding: "3px 8px", border: `1px solid ${palette.danger}`, borderRadius: spacing(1), background: "#fff5f5", color: palette.danger, cursor: "pointer", fontSize: typography.size.xs, fontWeight: 700 }}>{t.delete}</button>
+                              </div>
+                            ))}
+                            {group.recipes.length === 0 && <span style={{ color: palette.textMuted, fontSize: typography.size.sm }}>{t.dropHere}</span>}
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div style={{ marginTop: spacing(2), color: palette.textMuted, fontSize: typography.size.sm }}>{t.details}: {group.recipes.slice(0, 4).map((recipe) => getPartName(recipe.partId)).join(" / ") || t.dropHere}</div>
+                      )}
                     </div>
-                    <div style={{ display: "grid", gap: spacing(1) }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: spacing(2) }}><b>{t.registeredParts}</b><button type="button" onClick={() => deleteProductGroup(group)} style={dangerButtonStyle}>{t.deleteGroup}</button></div>
-                      {group.recipes.map((recipe) => (
-                        <div key={recipe.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto", alignItems: "center", gap: spacing(2), padding: `${spacing(1)} 0`, borderBottom: `1px solid ${palette.border}`, fontSize: typography.size.sm }}>
-                          <span>{getPartName(recipe.partId)}</span><b>x {Number(recipe.qty || 0)}</b><button type="button" onClick={() => removeRecipeFromGroup(recipe)} style={{ padding: "3px 8px", border: `1px solid ${palette.danger}`, borderRadius: spacing(1), background: "#fff5f5", color: palette.danger, cursor: "pointer", fontSize: typography.size.xs, fontWeight: 700 }}>{t.delete}</button>
-                        </div>
-                      ))}
-                      {group.recipes.length === 0 && <span style={{ color: palette.textMuted, fontSize: typography.size.sm }}>{t.dropHere}</span>}
-                    </div>
-                  </div>
-                ))}
-                {productGroups.length === 0 && <p style={{ color: palette.textMuted }}>{t.noGroups}</p>}
+                  );
+                })}
+                {filteredProductGroups.length === 0 && <p style={{ color: palette.textMuted }}>{t.noGroups}</p>}
               </div>
             </div>
           </div>
         </section>
       )}
-
       {editMode === "table" && (
         <section style={card({ padding: 0, overflow: "hidden" })}>
           <div style={{ overflowX: "auto" }}><div style={{ minWidth: 820 }}>
