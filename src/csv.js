@@ -1,4 +1,4 @@
-import Papa from "papaparse";
+﻿import Papa from "papaparse";
 import { db } from "./db";
 
 export async function exportAllCSV() {
@@ -9,7 +9,11 @@ export async function exportAllCSV() {
     db.progress.toArray()
   ]);
 
-  download("Parts.csv", Papa.unparse(parts));
+  download("Parts.csv", Papa.unparse(parts.map((part) => ({
+    ...part,
+    unitPrice: effectiveUnitPrice(part),
+    amount: calculatedAmount(part)
+  }))));
   download("Recipe.csv", Papa.unparse(recipes));
   download("Products.csv", Papa.unparse(products));
   download("Progress.csv", Papa.unparse(progress));
@@ -39,7 +43,12 @@ export async function importCSV(file, target) {
           id,
           name: readCell(r, ["name", "Name", "Part Name", "PartName", "\u90e8\u54c1\u540d"], id),
           stock: num(readCell(r, ["stock", "Stock", "Qty", "Quantity", "\u5728\u5eab", "Inventory", "InventoryNum"], "0")),
-        imageUrl: readCell(r, ["imageUrl", "Image URL", "ImageURL", "ImgURL", "\u753b\u50cfURL"], "")
+          purchaseAmount: num(readCell(r, ["purchaseAmount", "purchasePrice", "Purchase Amount", "Purchase Price", "\u4ed5\u5165\u91d1\u984d", "\u4ed5\u5165\u308c\u5024"], "0")),
+          purchaseQuantity: num(readCell(r, ["purchaseQuantity", "Purchase Quantity", "Purchase Qty", "\u4ed5\u5165\u308c\u6570"], "0")),
+          manualUnitPrice: readCell(r, ["manualUnitPrice", "Manual Unit Price", "\u5358\u4fa1\uff08\u624b\u5165\u529b\uff09", "\u624b\u5165\u529b\u5358\u4fa1"], ""),
+          usageQuantity: num(readCell(r, ["usageQuantity", "Usage Quantity", "Usage Qty", "\u4f7f\u7528\u6570\u91cf"], "0")),
+          supplier: readCell(r, ["supplier", "Supplier", "\u4ed5\u5165\u308c\u5148"], ""),
+          imageUrl: readCell(r, ["imageUrl", "Image URL", "ImageURL", "ImgURL", "\u753b\u50cfURL"], "")
         };
       })
     );
@@ -81,6 +90,7 @@ export async function importCSV(file, target) {
           id,
           name: readCell(r, ["name", "Name", "Product Name", "\u88fd\u54c1\u540d"], id),
           status: readCell(r, ["status", "Status"], "active") || "active",
+          salePrice: num(readCell(r, ["salePrice", "Sale Price", "\u8ca9\u58f2\u91d1\u984d"], "0")),
           internalId: internalId || undefined
         };
       })
@@ -122,6 +132,24 @@ function num(value) {
   }
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+function calculatedUnitPrice(part) {
+  const purchaseAmount = Number(part?.purchaseAmount ?? part?.purchasePrice ?? 0);
+  const purchaseQuantity = Number(part?.purchaseQuantity || 0);
+  if (!purchaseAmount || !purchaseQuantity) return 0;
+  return Math.round((purchaseAmount / purchaseQuantity) * 100) / 100;
+}
+
+function calculatedAmount(part) {
+  return Math.round(effectiveUnitPrice(part) * Number(part?.usageQuantity || 0) * 100) / 100;
+}
+
+function effectiveUnitPrice(part) {
+  if (part?.manualUnitPrice !== "" && part?.manualUnitPrice != null) {
+    return num(part.manualUnitPrice);
+  }
+  return calculatedUnitPrice(part);
 }
 
 function parseCSV(file) {

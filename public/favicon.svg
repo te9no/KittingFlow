@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="core" x1="10" y1="8" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#67e8f9"/>
+      <stop offset="0.48" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="stroke" x1="14" y1="16" x2="52" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e0f2fe"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#020617"/>
+  <path d="M32 3 57 17.5v29L32 61 7 46.5v-29L32 3Z" fill="url(#core)"/>
+  <path d="M32 8.5 52.2 20.2v23.6L32 55.5 11.8 43.8V20.2L32 8.5Z" fill="#0f172a" fill-opacity="0.48" stroke="#e0f2fe" stroke-opacity="0.28" stroke-width="1.2"/>
+  <path d="M21 21h10.5c6.4 0 10.5 3.5 10.5 8.8 0 5.5-4.1 8.9-10.5 8.9H27v8.1h-6V21Z" fill="none" stroke="url(#stroke)" stroke-width="4.6" stroke-linejoin="round"/>
+  <path d="M28.5 31.7h15.2M43.7 31.7l-5.8-5.4M43.7 31.7l-5.8 5.4" fill="none" stroke="#a5f3fc" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="20.8" cy="21" r="3.1" fill="#ecfeff"/>
+  <circle cx="46.3" cy="31.7" r="3.1" fill="#22d3ee"/>
+  <circle cx="27" cy="46.9" r="2.6" fill="#93c5fd"/>
+</svg>

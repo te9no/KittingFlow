@@ -10,6 +10,12 @@ const t = {
   addRow: "+ \u884c\u3092\u8ffd\u52a0",
   productId: "\u88fd\u54c1ID",
   productName: "\u88fd\u54c1\u540d",
+  salePrice: "\u8ca9\u58f2\u91d1\u984d",
+  costTotal: "\u539f\u4fa1\u7dcf\u984d",
+  costRate: "\u539f\u4fa1\u7387",
+  grossProfit: "\u5229\u76ca",
+  profitRate: "\u5229\u76ca\u7387",
+  analysis: "\u63a1\u7b97\u5206\u6790",
   partId: "\u90e8\u54c1ID",
   partName: "\u90e8\u54c1\u540d",
   qty: "\u5fc5\u8981\u6570",
@@ -59,6 +65,35 @@ const inputStyle = (hasError = false) => ({
   color: palette.text
 });
 
+function parseNumber(value) {
+  if (value === "" || value == null) return 0;
+  const normalized = typeof value === "string" ? value.replace(/[\s,]/g, "").trim() : value;
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function formatMoney(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "0";
+  return n.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
+}
+
+function formatPercent(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "-";
+  return `${Math.round(n * 10) / 10}%`;
+}
+
+function calculatedPartUnitPrice(part = {}) {
+  if (part.manualUnitPrice !== "" && part.manualUnitPrice != null) {
+    return parseNumber(part.manualUnitPrice);
+  }
+  const purchaseAmount = Number(part.purchaseAmount ?? part.purchasePrice ?? 0);
+  const purchaseQuantity = Number(part.purchaseQuantity || 0);
+  if (!purchaseAmount || !purchaseQuantity) return 0;
+  return purchaseAmount / purchaseQuantity;
+}
+
 export default function RecipeTable() {
   const [recipes, setRecipes] = useState([]);
   const [parts, setParts] = useState([]);
@@ -107,6 +142,34 @@ export default function RecipeTable() {
     return map;
   }, [products]);
 
+  const getProductForGroup = useCallback(
+    (productId) =>
+      products.find((product) => product.status === "template" && (product.id === productId || product.internalId === productId)) ||
+      products.find((product) => product.internalId === productId || product.id === productId) ||
+      null,
+    [products]
+  );
+
+  const analyzeGroup = useCallback(
+    (group) => {
+      const product = getProductForGroup(group.productId);
+      const salePrice = Number(product?.salePrice || 0);
+      const costTotal = group.recipes.reduce((sum, recipe) => {
+        const part = partMap.get(recipe.partId) || {};
+        return sum + calculatedPartUnitPrice(part) * Number(recipe.qty || 0);
+      }, 0);
+      const grossProfit = salePrice - costTotal;
+      return {
+        salePrice,
+        costTotal,
+        grossProfit,
+        costRate: salePrice > 0 ? (costTotal / salePrice) * 100 : null,
+        profitRate: salePrice > 0 ? (grossProfit / salePrice) * 100 : null
+      };
+    },
+    [getProductForGroup, partMap]
+  );
+
   const productGroups = useMemo(() => {
     const groups = new Map();
 
@@ -117,6 +180,7 @@ export default function RecipeTable() {
       groups.set(productId, {
         productId,
         productName: product.name || productId,
+        salePrice: Number(product.salePrice || 0),
         recipes: []
       });
     }
@@ -127,6 +191,7 @@ export default function RecipeTable() {
         groups.set(recipe.productId, {
           productId: recipe.productId,
           productName: recipe.productName || recipe.productId,
+          salePrice: Number(productMap.get(recipe.productId)?.salePrice || 0),
           recipes: []
         });
       }
@@ -134,7 +199,7 @@ export default function RecipeTable() {
     }
 
     return Array.from(groups.values()).sort((a, b) => a.productId.localeCompare(b.productId));
-  }, [products, recipes]);
+  }, [productMap, products, recipes]);
 
   const productOptions = useMemo(() => {
     const ids = new Set();
@@ -270,7 +335,7 @@ export default function RecipeTable() {
       return;
     }
 
-    await db.products.add({ id: productId, name: productName, internalId: productId, status: "template" });
+    await db.products.add({ id: productId, name: productName, internalId: productId, status: "template", salePrice: 0 });
     setNewGroupId("");
     setNewGroupName("");
     setExpandedGroupIds((prev) => ({ ...prev, [productId]: true }));
@@ -320,6 +385,20 @@ export default function RecipeTable() {
     await load();
   };
 
+  const updateProductGroupSalePrice = async (group, rawValue) => {
+    const salePrice = parseNumber(rawValue);
+    await db.transaction("rw", db.products, async () => {
+      const relatedProducts = products.filter((product) => product.id === group.productId || product.internalId === group.productId);
+      if (relatedProducts.length) {
+        await Promise.all(relatedProducts.map((product) => db.products.update(product.id, { salePrice })));
+      } else {
+        await db.products.add({ id: group.productId, name: group.productName || group.productId, internalId: group.productId, status: "template", salePrice });
+      }
+    });
+    setMessage(`${group.productName} \u306e\u8ca9\u58f2\u91d1\u984d\u3092\u66f4\u65b0\u3057\u307e\u3057\u305f\u3002`);
+    await load();
+  };
+
   const duplicateProductGroup = async (group) => {
     const draft = duplicateDrafts[group.productId] || {};
     const productId = String(draft.id || `${group.productId}-COPY`).trim();
@@ -333,7 +412,7 @@ export default function RecipeTable() {
       return;
     }
     await db.transaction("rw", db.products, db.recipes, async () => {
-      await db.products.add({ id: productId, name: productName || productId, internalId: productId, status: "template" });
+      await db.products.add({ id: productId, name: productName || productId, internalId: productId, status: "template", salePrice: Number(getProductForGroup(group.productId)?.salePrice || 0) });
       if (group.recipes.length) {
         await db.recipes.bulkAdd(group.recipes.map((recipe) => ({ productId, productName: productName || productId, partId: recipe.partId || "", partName: recipe.partName || "", qty: Number(recipe.qty || 1) })));
       }
@@ -482,6 +561,7 @@ export default function RecipeTable() {
               <div style={{ display: "grid", gap: spacing(3), marginTop: spacing(2) }}>
                 {filteredProductGroups.map((group) => {
                   const expanded = Boolean(expandedGroupIds[group.productId]);
+                  const analysis = analyzeGroup(group);
                   return (
                     <div key={group.productId} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleDrop(event, group.productId)} style={productGroupStyle(Boolean(draggingPartId))}>
                       <div style={groupCardHeaderStyle}>
@@ -495,6 +575,16 @@ export default function RecipeTable() {
                       {expanded ? (
                         <div style={{ display: "grid", gap: spacing(2), marginTop: spacing(3) }}>
                           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: spacing(2) }}>
+                            <div style={groupActionPanelStyle}>
+                              <b>{t.salePrice}</b>
+                              <input
+                                type="number"
+                                defaultValue={analysis.salePrice || ""}
+                                onBlur={(event) => updateProductGroupSalePrice(group, event.target.value)}
+                                placeholder="0"
+                                style={smallInputStyle}
+                              />
+                            </div>
                             <div style={groupActionPanelStyle}>
                               <b>{t.rename}</b>
                               <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: spacing(2) }}>
@@ -512,11 +602,20 @@ export default function RecipeTable() {
                             </div>
                           </div>
 
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: spacing(2), padding: spacing(3), border: `1px solid ${palette.border}`, borderRadius: spacing(2.5), background: "linear-gradient(135deg, #f8fafc 0%, #ecfeff 100%)" }}>
+                            <div><div style={mutedHelpStyle}>{t.salePrice}</div><b>{formatMoney(analysis.salePrice)}</b></div>
+                            <div><div style={mutedHelpStyle}>{t.costTotal}</div><b>{formatMoney(analysis.costTotal)}</b></div>
+                            <div><div style={mutedHelpStyle}>{t.costRate}</div><b>{formatPercent(analysis.costRate)}</b></div>
+                            <div><div style={mutedHelpStyle}>{t.grossProfit}</div><b style={{ color: analysis.grossProfit >= 0 ? "#047857" : palette.danger }}>{formatMoney(analysis.grossProfit)}</b></div>
+                            <div><div style={mutedHelpStyle}>{t.profitRate}</div><b style={{ color: analysis.grossProfit >= 0 ? "#047857" : palette.danger }}>{formatPercent(analysis.profitRate)}</b></div>
+                          </div>
+
                           <div style={{ display: "grid", gap: spacing(1) }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: spacing(2), marginTop: spacing(1) }}><b>{t.registeredParts}</b><button type="button" onClick={() => deleteProductGroup(group)} style={dangerButtonStyle}>{t.deleteGroup}</button></div>
                             {group.recipes.map((recipe) => (
-                              <div key={recipe.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto auto auto", alignItems: "center", gap: spacing(2), padding: `${spacing(1)} 0`, borderBottom: `1px solid ${palette.border}`, fontSize: typography.size.sm }}>
+                              <div key={recipe.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto auto auto auto", alignItems: "center", gap: spacing(2), padding: `${spacing(1)} 0`, borderBottom: `1px solid ${palette.border}`, fontSize: typography.size.sm }}>
                                 <span>{getPartName(recipe.partId)}</span>
+                                <span style={{ color: palette.textMuted }}>{formatMoney(calculatedPartUnitPrice(partMap.get(recipe.partId)))}</span>
                                 <button type="button" onClick={() => updateRecipeQuantity(recipe, -1)} style={tinyButtonStyle}>-</button>
                                 <b>x {Number(recipe.qty || 0)}</b>
                                 <button type="button" onClick={() => updateRecipeQuantity(recipe, 1)} style={tinyButtonStyle}>+</button>
@@ -527,7 +626,7 @@ export default function RecipeTable() {
                           </div>
                         </div>
                       ) : (
-                        <div style={{ marginTop: spacing(2), color: palette.textMuted, fontSize: typography.size.sm }}>{t.details}: {group.recipes.slice(0, 4).map((recipe) => getPartName(recipe.partId)).join(" / ") || t.dropHere}</div>
+                        <div style={{ marginTop: spacing(2), color: palette.textMuted, fontSize: typography.size.sm }}>{t.details}: {group.recipes.slice(0, 4).map((recipe) => getPartName(recipe.partId)).join(" / ") || t.dropHere} / {t.costTotal}: {formatMoney(analysis.costTotal)} / {t.grossProfit}: {formatMoney(analysis.grossProfit)}</div>
                       )}
                     </div>
                   );

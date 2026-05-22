@@ -1,9 +1,9 @@
-import Dexie from 'dexie';
+﻿import Dexie from 'dexie';
 
 export let db;
 
-export const PROGRESS_STATE_READY = '準備中';
-export const PROGRESS_STATE_DONE = '完了';
+export const PROGRESS_STATE_READY = '\u6e96\u5099\u4e2d';
+export const PROGRESS_STATE_DONE = '\u5b8c\u4e86';
 
 const CITY_NAMES = [
   'Tokyo',
@@ -136,10 +136,10 @@ function generateUniqueFancyId(prefix = 'MK') {
 
 function defineDB() {
   db = new Dexie('kittingflow_local');
-  db.version(3).stores({
-    parts: 'id,name,stock,imageUrl',
+  db.version(5).stores({
+    parts: 'id,name,stock,imageUrl,supplier',
     recipes: '++id,productId,partId,qty,productName',
-    products: 'id,name,internalId,status',
+    products: 'id,name,internalId,status,salePrice',
     progress: 'productId'
   });
   return db.open();
@@ -162,11 +162,11 @@ export async function initSampleDataIfEmpty() {
   if (count === 0) {
     await db.transaction('rw', db.parts, db.products, db.recipes, db.progress, async () => {
       await db.parts.bulkAdd([
-        { id: 'PCB001', name: 'PCB Board A', stock: 50 },
-        { id: 'PCB002', name: 'PCB Board B', stock: 40 }
+        { id: 'PCB001', name: 'PCB Board A', stock: 50, purchaseAmount: 12000, purchaseQuantity: 100, manualUnitPrice: '', usageQuantity: 1, supplier: 'Sample Supplier' },
+        { id: 'PCB002', name: 'PCB Board B', stock: 40, purchaseAmount: 9800, purchaseQuantity: 100, manualUnitPrice: '', usageQuantity: 1, supplier: 'Sample Supplier' }
       ]);
       await db.products.bulkAdd([
-        { id: 'MK-Delhi-Deer-SM63', name: 'TB', internalId: 'P001', status: 'active' }
+        { id: 'MK-Delhi-Deer-SM63', name: 'TB', internalId: 'P001', status: 'active', salePrice: 500 }
       ]);
       await db.recipes.bulkAdd([
         { productId: 'P001', productName: 'PCB', partId: 'PCB001', qty: 1 },
@@ -256,7 +256,7 @@ export async function getProductTemplates() {
 }
 
 export async function createProductInstance({ id, internalId, name }) {
-  if (!internalId) throw new Error('テンプレートを選択してください');
+  if (!internalId) throw new Error('繝・Φ繝励Ξ繝ｼ繝医ｒ驕ｸ謚槭＠縺ｦ縺上□縺輔＞');
   if (!db?.isOpen()) await initDB();
 
   let fancyId = (id || '').trim();
@@ -265,7 +265,7 @@ export async function createProductInstance({ id, internalId, name }) {
   while (!fancyId || (await db.products.get(fancyId))) {
     fancyId = generateUniqueFancyId();
     attempts += 1;
-    if (attempts > 20) throw new Error('Fancy ID を生成できませんでした');
+    if (attempts > 20) throw new Error('Fancy ID 繧堤函謌舌〒縺阪∪縺帙ｓ縺ｧ縺励◆');
   }
 
   const templateProduct = await db.products.where('internalId').equals(internalId).first();
@@ -281,6 +281,7 @@ export async function createProductInstance({ id, internalId, name }) {
       id: fancyId,
       name: templateName,
       internalId,
+      salePrice: Number(templateProduct?.salePrice || 0),
       status: 'active'
     });
     await db.progress.put(defaultProgress(fancyId));
@@ -311,7 +312,7 @@ export async function getTotalPartsRequirement(selectedProducts) {
     }
   }
 
-  // 不足数を計算
+  // 荳崎ｶｳ謨ｰ繧定ｨ育ｮ・
   Object.values(resultMap).forEach(p => {
     p.shortage = Math.max(0, p.required - p.stock);
   });
