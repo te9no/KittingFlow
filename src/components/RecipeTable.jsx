@@ -1,31 +1,32 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { db } from "../db";
 import { card, layout, palette, spacing, typography } from "../styles/theme";
 
 const COLUMNS = [
-  { key: "productId", label: "製品ID", align: "left" },
-  { key: "productName", label: "製品名", align: "left" },
-  { key: "partId", label: "部品ID", align: "left" },
-  { key: "partName", label: "部品名", align: "left", editable: false },
-  { key: "qty", label: "必要数", align: "right", type: "number" }
+  { key: "productId", label: "製品ID", editable: true },
+  { key: "productName", label: "製品名", editable: true },
+  { key: "partId", label: "部品ID", editable: true },
+  { key: "partName", label: "部品名", editable: false },
+  { key: "qty", label: "必要数", editable: true, type: "number" }
 ];
 
-const EDITABLE_COLUMNS = COLUMNS.filter((column) => column.editable !== false);
-const EDITABLE_KEYS = EDITABLE_COLUMNS.map((c) => c.key);
+const inputStyle = (hasError = false) => ({
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "7px 9px",
+  border: `1px solid ${hasError ? palette.danger : palette.border}`,
+  borderRadius: spacing(1.5),
+  background: hasError ? "#fff1f2" : palette.surfaceAlt,
+  color: palette.text
+});
 
 export default function RecipeTable() {
   const [recipes, setRecipes] = useState([]);
   const [parts, setParts] = useState([]);
   const [products, setProducts] = useState([]);
-  const [drafts, setDrafts] = useState({});
   const [message, setMessage] = useState("");
-  const [pendingFocus, setPendingFocus] = useState(null);
-  const [toolbarOffset, setToolbarOffset] = useState("0px");
-  const [scrollAreaHeight, setScrollAreaHeight] = useState(null);
-  const [tableHeaderOffset, setTableHeaderOffset] = useState("0px");
-  const cellRefs = useRef({});
-  const tableScrollRef = useRef(null);
-  const toolbarRef = useRef(null);
+  const [draggingPartId, setDraggingPartId] = useState("");
+  const [editMode, setEditMode] = useState("drag");
 
   const load = useCallback(async () => {
     const [recipeRows, partRows, productRows] = await Promise.all([
@@ -43,292 +44,181 @@ export default function RecipeTable() {
   }, [load]);
 
   useEffect(() => {
-    if (!pendingFocus) return;
-    const key = `${pendingFocus.id}:${pendingFocus.field}`;
-    const node = cellRefs.current[key];
-    if (node) {
-      node.focus();
-      node.select();
-      setPendingFocus(null);
-    }
-  }, [recipes, pendingFocus]);
-
-  useEffect(() => {
-    if (!message) return;
-    const timer = setTimeout(() => setMessage(""), 3000);
+    if (!message) return undefined;
+    const timer = setTimeout(() => setMessage(""), 3500);
     return () => clearTimeout(timer);
   }, [message]);
 
-  const updateLayoutMetrics = useCallback(() => {
-    if (typeof document === "undefined") return;
-    const GAP = 12;
-    const appHeader = document.querySelector("[data-app-header='true']");
-    const headerHeight = appHeader?.getBoundingClientRect().height ?? 0;
-    const nextToolbarTop = `${Math.round(headerHeight + GAP)}px`;
-    setToolbarOffset((prev) => (prev === nextToolbarTop ? prev : nextToolbarTop));
+  const partMap = useMemo(() => new Map(parts.map((part) => [part.id, part])), [parts]);
 
-    const toolbarHeight = toolbarRef.current?.getBoundingClientRect().height ?? 0;
-    const toolbarGap = 8;
-    const nextHeaderTop = `${Math.round(headerHeight + GAP + toolbarHeight + toolbarGap)}px`;
-    setTableHeaderOffset((prev) => (prev === nextHeaderTop ? prev : nextHeaderTop));
-
-    if (tableScrollRef.current) {
-      const rect = tableScrollRef.current.getBoundingClientRect();
-      const footerGap = 32;
-      const available = Math.floor(window.innerHeight - rect.top - footerGap);
-      if (Number.isFinite(available) && available > 200) {
-        setScrollAreaHeight((prev) => (prev === available ? prev : available));
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    updateLayoutMetrics();
-    window.addEventListener("resize", updateLayoutMetrics);
-    return () => window.removeEventListener("resize", updateLayoutMetrics);
-  }, [updateLayoutMetrics]);
-
-  useEffect(() => {
-    updateLayoutMetrics();
-  }, [recipes.length, message, updateLayoutMetrics]);
-
-  const productMaps = useMemo(() => {
-    const byId = new Map();
-    const byInternal = new Map();
-    for (const product of products) {
-      byId.set(product.id, product);
-      if (product.internalId) {
-        byInternal.set(product.internalId, product);
-      }
-    }
-    return { byId, byInternal };
-  }, [products]);
-
-  const partMap = useMemo(() => {
+  const productMap = useMemo(() => {
     const map = new Map();
-    for (const part of parts) {
-      map.set(part.id, part);
+    for (const product of products) {
+      if (product.id) map.set(product.id, product);
+      if (product.internalId) map.set(product.internalId, product);
     }
     return map;
-  }, [parts]);
+  }, [products]);
 
-  const setDraftValue = (id, field, value) => {
-    setDrafts((prev) => ({
-      ...prev,
-      [id]: { ...(prev[id] || {}), [field]: value }
-    }));
-  };
+  const productGroups = useMemo(() => {
+    const groups = new Map();
 
-  const clearDraft = (id, field) => {
-    setDrafts((prev) => {
-      const next = { ...(prev || {}) };
-      if (!next[id]) return next;
-      const row = { ...next[id] };
-      delete row[field];
-      if (Object.keys(row).length === 0) {
-        delete next[id];
-      } else {
-        next[id] = row;
-      }
-      return next;
-    });
-  };
-
-  const findOriginal = (id) => recipes.find((recipe) => recipe.id === id);
-
-  const fallbackProductName = (recipe) => {
-    if (!recipe) return "";
-    const product =
-      productMaps.byInternal.get(recipe.productId) ||
-      productMaps.byId.get(recipe.productId);
-    return product?.name ?? recipe.productName ?? "";
-  };
-
-  const displayValue = (id, field) => {
-    const draft = drafts[id]?.[field];
-    if (draft !== undefined) return draft;
-    const original = findOriginal(id);
-    if (!original) return "";
-    switch (field) {
-      case "qty":
-        return original.qty == null ? "" : String(original.qty);
-      case "productName":
-        return fallbackProductName(original);
-      case "partName": {
-        const part = partMap.get(original.partId);
-        return part?.name ?? original.partName ?? "";
-      }
-      default:
-        return original[field] ?? "";
+    for (const product of products) {
+      const productId = product.internalId || product.id;
+      if (!productId) continue;
+      groups.set(productId, {
+        productId,
+        productName: product.name || productId,
+        recipes: []
+      });
     }
-  };
 
-  const buildRecipePatch = (updates) => {
-    const patch = {};
-    for (const [field, raw] of Object.entries(updates)) {
-      switch (field) {
-        case "productId":
-          patch.productId = String(raw ?? "").trim();
-          break;
-        case "productName":
-          patch.productName = String(raw ?? "").trim();
-          break;
-        case "partId":
-          patch.partId = String(raw ?? "").trim();
-          break;
-        case "qty": {
-          const num = Number(raw);
-          if (!Number.isFinite(num) || num <= 0) {
-            return { error: "必要数には 1 以上の数値を入力してください" };
-          }
-          patch.qty = num;
-          break;
-        }
-        default:
-          patch[field] = raw;
+    for (const recipe of recipes) {
+      if (!recipe.productId) continue;
+      if (!groups.has(recipe.productId)) {
+        groups.set(recipe.productId, {
+          productId: recipe.productId,
+          productName: recipe.productName || recipe.productId,
+          recipes: []
+        });
       }
+      groups.get(recipe.productId).recipes.push(recipe);
     }
+
+    return Array.from(groups.values()).sort((a, b) => a.productId.localeCompare(b.productId));
+  }, [products, recipes]);
+
+  const productOptions = useMemo(() => {
+    const ids = new Set();
+    for (const product of products) {
+      if (product.id) ids.add(product.id);
+      if (product.internalId) ids.add(product.internalId);
+    }
+    for (const recipe of recipes) {
+      if (recipe.productId) ids.add(recipe.productId);
+    }
+    return Array.from(ids).sort();
+  }, [products, recipes]);
+
+  const partOptions = useMemo(() => parts.map((part) => part.id).sort(), [parts]);
+
+  const getPartName = useCallback(
+    (partId) => partMap.get(partId)?.name || partId || "-",
+    [partMap]
+  );
+
+  const normalizeRecipePatch = (field, rawValue) => {
+    if (field === "qty") {
+      const qty = Number(rawValue);
+      if (!Number.isFinite(qty) || qty <= 0) {
+        return { error: "必要数には 1 以上の数値を入力してください。" };
+      }
+      return { patch: { qty } };
+    }
+
+    const value = String(rawValue ?? "").trim();
+    const patch = { [field]: value };
+
+    if (field === "productId") {
+      const product = productMap.get(value);
+      if (product?.name) patch.productName = product.name;
+    }
+
+    if (field === "partId") {
+      const part = partMap.get(value);
+      if (!part && value) return { error: `部品ID「${value}」は登録されていません。` };
+      patch.partName = part?.name || "";
+    }
+
     return { patch };
   };
 
-  const handleBlur = async (id, field) => {
-    const rowDraft = drafts[id];
-    if (!rowDraft || !(field in rowDraft)) return;
-    const original = findOriginal(id);
-    if (!original) {
-      clearDraft(id, field);
-      return;
-    }
-
-    const { patch, error } = buildRecipePatch({ [field]: rowDraft[field] });
+  const updateRecipe = async (id, field, value) => {
+    const { patch, error } = normalizeRecipePatch(field, value);
     if (error) {
       setMessage(error);
       return;
     }
 
-    if (field === "productId") {
-      const product =
-        productMaps.byInternal.get(patch.productId) ||
-        productMaps.byId.get(patch.productId);
-      if (product?.name) {
-        patch.productName = product.name;
-      }
+    try {
+      await db.recipes.update(id, patch);
+      setMessage("レシピを更新しました。");
+      await load();
+    } catch (error) {
+      console.error(error);
+      setMessage("レシピの更新に失敗しました。");
     }
+  };
 
-    if (field === "partId") {
-      const part = partMap.get(patch.partId);
-      if (!part && patch.partId) {
-        setMessage(`部品ID「${patch.partId}」は登録されていません`);
-        patch.partName = "";
-      } else if (part?.name) {
-        patch.partName = part.name;
-      } else {
-        patch.partName = "";
-      }
-    }
+  const addEmptyRow = async () => {
+    await db.recipes.add({ productId: "", productName: "", partId: "", partName: "", qty: 1 });
+    setMessage("空のレシピ行を追加しました。");
+    await load();
+  };
 
-    const same =
-      field === "qty"
-        ? Number(original.qty ?? 0) === Number(patch.qty ?? 0)
-        : String(original[field] ?? "") === String(patch[field] ?? "");
-    if (same) {
-      clearDraft(id, field);
+  const duplicateRecipe = async (recipe) => {
+    await db.recipes.add({
+      productId: recipe.productId || "",
+      productName: recipe.productName || "",
+      partId: recipe.partId || "",
+      partName: recipe.partName || "",
+      qty: Number(recipe.qty || 1)
+    });
+    setMessage("レシピを複製しました。");
+    await load();
+  };
+
+  const deleteRecipe = async (recipe) => {
+    const label = `${recipe.productId || "?"} / ${recipe.partId || "?"}`;
+    if (!window.confirm(`レシピ「${label}」を削除しますか？`)) return;
+    await db.recipes.delete(recipe.id);
+    setMessage("レシピを削除しました。");
+    await load();
+  };
+
+  const addPartToProduct = async (productId, partId) => {
+    if (!productId || !partId) return;
+
+    const part = partMap.get(partId);
+    if (!part) {
+      setMessage(`部品ID「${partId}」は登録されていません。`);
       return;
     }
 
-    try {
-      await db.recipes.update(id, patch);
-      setMessage("レシピを更新しました");
-      await load();
-    } catch (error) {
-      console.error(error);
-      setMessage("レシピの更新に失敗しました");
+    const group = productGroups.find((item) => item.productId === productId);
+    const existing = recipes.find((recipe) => recipe.productId === productId && recipe.partId === partId);
+
+    if (existing) {
+      await db.recipes.update(existing.id, {
+        qty: Number(existing.qty || 0) + 1,
+        partName: part.name || part.id
+      });
+      setMessage(`${group?.productName || productId} の「${part.name || partId}」を +1 しました。`);
+    } else {
+      await db.recipes.add({
+        productId,
+        productName: group?.productName || productId,
+        partId,
+        partName: part.name || part.id,
+        qty: 1
+      });
+      setMessage(`${group?.productName || productId} に「${part.name || partId}」を追加しました。`);
     }
 
-    clearDraft(id, field);
-  };
-
-  const handleKeyDown = (event, rowIndex, columnIndex) => {
-    const { key, shiftKey } = event;
-    const navigate = (nextRow, nextCol) => {
-      if (nextCol < 0 || nextCol >= EDITABLE_KEYS.length) return;
-      const row = recipes[nextRow];
-      if (!row) return;
-      const keyRef = `${row.id}:${EDITABLE_KEYS[nextCol]}`;
-      const node = cellRefs.current[keyRef];
-      if (node) {
-        event.preventDefault();
-        node.focus();
-        node.select();
-      }
-    };
-
-    if (key === "Enter") {
-      event.preventDefault();
-      navigate(rowIndex + (shiftKey ? -1 : 1), columnIndex);
-    } else if (key === "ArrowDown") {
-      event.preventDefault();
-      navigate(rowIndex + 1, columnIndex);
-    } else if (key === "ArrowUp") {
-      event.preventDefault();
-      navigate(rowIndex - 1, columnIndex);
-    } else if (key === "ArrowLeft") {
-      navigate(rowIndex, columnIndex - 1);
-    } else if (key === "ArrowRight") {
-      navigate(rowIndex, columnIndex + 1);
-    }
-  };
-
-  const addRow = async () => {
-    const newId = await db.recipes.add({
-      productId: "",
-      productName: "",
-      partId: "",
-      partName: "",
-      qty: 1
-    });
     await load();
-    setDrafts((prev) => ({
-      ...prev,
-      [newId]: { productId: "", productName: "", partId: "", qty: "1", partName: "" }
-    }));
-    setPendingFocus({ id: newId, field: "productId" });
-    setMessage("空のレシピ行を追加しました");
   };
 
-  const cloneRecipe = async (id) => {
-    const original = findOriginal(id);
-    if (!original) return;
-    const payload = {
-      productId: original.productId ?? "",
-      productName: original.productName ?? "",
-      partId: original.partId ?? "",
-      partName: original.partName ?? "",
-      qty: Number(original.qty ?? 1)
-    };
-    try {
-      const newId = await db.recipes.add(payload);
-      setMessage("レシピを複製しました");
-      await load();
-      setPendingFocus({ id: newId, field: "productId" });
-    } catch (error) {
-      console.error(error);
-      setMessage("レシピの複製に失敗しました");
-    }
+  const handleDragStart = (event, partId) => {
+    setDraggingPartId(partId);
+    event.dataTransfer.setData("text/plain", partId);
+    event.dataTransfer.effectAllowed = "copy";
   };
 
-  const deleteRow = async (id) => {
-    const original = findOriginal(id);
-    const label = original ? `${original.productId || "?"} / ${original.partId || "?"}` : id;
-    if (!window.confirm(`レシピ「${label}」を削除しますか？`)) return;
-    await db.recipes.delete(id);
-    setMessage("レシピを削除しました");
-    await load();
-    setDrafts((prev) => {
-      const next = { ...(prev || {}) };
-      delete next[id];
-      return next;
-    });
+  const handleDrop = (event, productId) => {
+    event.preventDefault();
+    const partId = event.dataTransfer.getData("text/plain") || draggingPartId;
+    setDraggingPartId("");
+    addPartToProduct(productId, partId);
   };
 
   const containerStyle = {
@@ -337,218 +227,215 @@ export default function RecipeTable() {
     padding: spacing(4)
   };
 
-  const tableContainerStyle = {
-    ...card({ padding: "0" })
-  };
-
-  const toolbarStyle = useMemo(
-    () => ({
-      position: "sticky",
-      top: toolbarOffset,
-      zIndex: 50,
-      background: palette.background,
-      padding: `${spacing(2)} 0`,
-      marginBottom: spacing(3),
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center"
-    }),
-    [toolbarOffset]
-  );
-
-  const gridTemplateColumns = useMemo(
-    () =>
-      [
-        "minmax(120px, 1fr)",
-        "minmax(160px, 1.1fr)",
-        "minmax(120px, 1fr)",
-        "minmax(160px, 1.1fr)",
-        "minmax(80px, 0.5fr)",
-        "minmax(90px, 0.5fr)"
-      ].join(" "),
-    []
-  );
-
-  const headerRowStyle = useMemo(
-    () => ({
-      display: "grid",
-      gridTemplateColumns,
-      gap: spacing(2),
-      background: palette.surfaceAlt,
-      padding: `${spacing(2)} ${spacing(3)}`,
-      borderBottom: `1px solid ${palette.border}`,
-      boxShadow: "0 8px 18px rgba(15, 23, 42, 0.08)",
-      position: "sticky",
-      top: tableHeaderOffset,
-      zIndex: 40
-    }),
-    [gridTemplateColumns, tableHeaderOffset]
-  );
-
-  const rowStyle = useMemo(
-    () => ({
-      display: "grid",
-      gridTemplateColumns,
-      gap: spacing(2),
-      alignItems: "center",
-      padding: `${spacing(2)} ${spacing(3)}`,
-      borderBottom: `1px solid ${palette.border}`
-    }),
-    [gridTemplateColumns]
-  );
-
-  const scrollAreaStyle = useMemo(
-    () => ({
-      position: "relative",
-      maxHeight: scrollAreaHeight ? `${scrollAreaHeight}px` : "60vh",
-      overflowY: "auto",
-      overflowX: "hidden"
-    }),
-    [scrollAreaHeight]
-  );
-
-  const gridWrapperStyle = useMemo(
-    () => ({
-      minWidth: 760
-    }),
-    []
-  );
-
-  const emptyStateStyle = {
-    padding: spacing(4),
-    textAlign: "center",
-    color: palette.textMuted
-  };
-
-  const cellPaddingStyle = {
+  const toolbarStyle = {
+    position: "sticky",
+    top: 88,
+    zIndex: 20,
     display: "flex",
-    flexDirection: "column",
-    gap: spacing(1),
-    minHeight: "40px",
-    justifyContent: "center"
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: spacing(3),
+    padding: `${spacing(2)} 0`,
+    marginBottom: spacing(3),
+    background: palette.background
+  };
+
+  const buttonStyle = {
+    padding: "8px 14px",
+    borderRadius: spacing(2),
+    border: `1px solid ${palette.primaryDark}`,
+    background: palette.primary,
+    color: "#fff",
+    fontWeight: 700,
+    cursor: "pointer"
+  };
+
+  const modeToggleStyle = {
+    display: "inline-flex",
+    padding: 4,
+    border: `1px solid ${palette.border}`,
+    borderRadius: spacing(2.5),
+    background: palette.surface,
+    boxShadow: "0 1px 4px rgba(15, 23, 42, 0.08)"
+  };
+
+  const modeButtonStyle = (active) => ({
+    padding: "7px 12px",
+    border: 0,
+    borderRadius: spacing(2),
+    background: active ? palette.primary : "transparent",
+    color: active ? "#fff" : palette.textMuted,
+    fontWeight: 700,
+    cursor: "pointer"
+  });
+
+  const quickEditLayoutStyle = {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+    gap: spacing(4),
+    alignItems: "start"
+  };
+
+  const partChipStyle = {
+    display: "grid",
+    gap: spacing(0.5),
+    padding: `${spacing(2)} ${spacing(3)}`,
+    border: `1px solid ${palette.border}`,
+    borderRadius: spacing(2),
+    background: palette.surfaceAlt,
+    cursor: "grab"
+  };
+
+  const productGroupStyle = (isActive = false) => ({
+    border: `1px dashed ${isActive ? palette.primary : palette.border}`,
+    borderRadius: spacing(3),
+    padding: spacing(3),
+    background: isActive ? "#eff6ff" : "#fbfdff",
+    minHeight: 130
+  });
+
+  const tableGridStyle = {
+    display: "grid",
+    gridTemplateColumns: "minmax(110px, 1fr) minmax(140px, 1.1fr) minmax(110px, 1fr) minmax(140px, 1.1fr) minmax(80px, 0.5fr) minmax(120px, 0.7fr)",
+    gap: spacing(2),
+    alignItems: "center"
   };
 
   return (
     <div style={containerStyle}>
-      <header ref={toolbarRef} style={toolbarStyle}>
-        <h3 style={{ margin: 0, fontWeight: typography.headingWeight }}>📜 レシピ一覧（セル編集）</h3>
-        <button
-          onClick={addRow}
-          style={{
-            padding: "8px 16px",
-            borderRadius: spacing(2),
-            border: `1px solid ${palette.primaryDark}`,
-            background: palette.primary,
-            color: "#fff",
-            fontWeight: 600,
-            cursor: "pointer"
-          }}
-        >
-          + 行を追加
-        </button>
+      <header style={toolbarStyle}>
+        <div>
+          <h3 style={{ margin: 0, fontWeight: typography.headingWeight }}>レシピ編集</h3>
+          <p style={{ margin: `${spacing(1)} 0 0`, color: palette.textMuted, fontSize: typography.size.sm }}>
+            ドラッグで追加し、細かい数値は下の表で直接編集できます。
+          </p>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: spacing(2), flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <div style={modeToggleStyle} aria-label="レシピ編集方式">
+            <button
+              type="button"
+              onClick={() => setEditMode("drag")}
+              style={modeButtonStyle(editMode === "drag")}
+              aria-pressed={editMode === "drag"}
+            >
+              ドラッグ編集
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditMode("table")}
+              style={modeButtonStyle(editMode === "table")}
+              aria-pressed={editMode === "table"}
+            >
+              表編集
+            </button>
+          </div>
+          <button onClick={addEmptyRow} style={buttonStyle}>+ 行を追加</button>
+        </div>
       </header>
 
       {message && (
-        <div
-          style={{
-            marginBottom: spacing(3),
-            padding: `${spacing(2)} ${spacing(3)}`,
-            background: "#fef3c7",
-            border: `1px solid ${palette.warning}33`,
-            borderRadius: spacing(2),
-            color: "#92400e"
-          }}
-        >
+        <div style={{ marginBottom: spacing(3), padding: `${spacing(2)} ${spacing(3)}`, background: "#fef3c7", border: `1px solid ${palette.warning}55`, borderRadius: spacing(2), color: "#92400e" }}>
           {message}
         </div>
       )}
 
-      <div style={tableContainerStyle}>
-        <div style={{ overflowX: "auto" }}>
-          <div style={gridWrapperStyle}>
-            <div style={headerRowStyle}>
-              {COLUMNS.map((column) => (
-                <div key={column.key} style={{ fontWeight: 600, fontSize: typography.size.sm, textAlign: column.align }}>
-                  {column.label}
+      {editMode === "drag" && <section style={{ ...card(), marginBottom: spacing(4) }}>
+        <h4 style={{ margin: 0, fontSize: typography.size.lg }}>ドラッグでレシピに追加</h4>
+        <p style={{ margin: `${spacing(1)} 0 ${spacing(4)}`, color: palette.textMuted }}>
+          左の部品を右の製品グループへドラッグしてください。既に登録済みの部品は必要数を +1 します。
+        </p>
+
+        <div style={quickEditLayoutStyle}>
+          <div>
+            <b>部品リスト</b>
+            <div style={{ display: "grid", gap: spacing(2), marginTop: spacing(2), maxHeight: 380, overflowY: "auto" }}>
+              {parts.map((part) => (
+                <div key={part.id} draggable onDragStart={(event) => handleDragStart(event, part.id)} onDragEnd={() => setDraggingPartId("")} style={partChipStyle}>
+                  <span style={{ fontWeight: 700 }}>{part.name || part.id}</span>
+                  <span style={{ color: palette.textMuted, fontSize: typography.size.sm }}>{part.id} / 在庫 {Number(part.stock || 0)}</span>
                 </div>
               ))}
-              <div style={{ fontWeight: 600, fontSize: typography.size.sm, textAlign: "center" }}>操作</div>
+              {parts.length === 0 && <p style={{ color: palette.textMuted }}>部品データがありません。</p>}
             </div>
           </div>
-          <div ref={tableScrollRef} style={scrollAreaStyle}>
-            <div style={gridWrapperStyle}>
-              {recipes.map((recipe, rowIndex) => (
-                <div key={recipe.id} style={rowStyle}>
-                  {COLUMNS.map((column) => {
-                    const editableIndex = EDITABLE_KEYS.indexOf(column.key);
-                    const isEditable = editableIndex !== -1;
-                    return (
-                      <div key={column.key} style={{ ...cellPaddingStyle, textAlign: column.align }}>
-                        {isEditable ? (
-                          <input
-                            ref={(node) => {
-                              const key = `${recipe.id}:${column.key}`;
-                              if (node) cellRefs.current[key] = node;
-                              else delete cellRefs.current[key];
-                            }}
-                            type={column.type === "number" ? "number" : "text"}
-                            value={displayValue(recipe.id, column.key)}
-                            onChange={(event) => setDraftValue(recipe.id, column.key, event.target.value)}
-                            onBlur={() => handleBlur(recipe.id, column.key)}
-                            onKeyDown={(event) => handleKeyDown(event, rowIndex, editableIndex)}
-                            style={{
-                              width: "100%",
-                              boxSizing: "border-box",
-                              padding: "6px 8px",
-                              border: `1px solid ${palette.border}`,
-                              borderRadius: spacing(1.5),
-                              fontSize: typography.size.sm,
-                              textAlign: column.align,
-                              background: palette.surfaceAlt
-                            }}
-                          />
-                        ) : (
-                          <span>{displayValue(recipe.id, column.key) || "-"}</span>
-                        )}
+
+          <div>
+            <b>製品グループ</b>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: spacing(3), marginTop: spacing(2) }}>
+              {productGroups.map((group) => (
+                <div key={group.productId} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleDrop(event, group.productId)} style={productGroupStyle(Boolean(draggingPartId))}>
+                  <div style={{ fontWeight: 800 }}>{group.productName}</div>
+                  <div style={{ color: palette.textMuted, fontSize: typography.size.sm, marginBottom: spacing(2) }}>{group.productId}</div>
+                  <div style={{ display: "grid", gap: spacing(1) }}>
+                    {group.recipes.map((recipe) => (
+                      <div key={recipe.id} style={{ display: "flex", justifyContent: "space-between", gap: spacing(2), fontSize: typography.size.sm }}>
+                        <span>{getPartName(recipe.partId)}</span>
+                        <b>x {Number(recipe.qty || 0)}</b>
                       </div>
-                    );
-                  })}
-                <div style={{ display: "flex", justifyContent: "center", gap: spacing(1) }}>
-                  <button
-                    onClick={() => cloneRecipe(recipe.id)}
-                    style={{
-                      padding: "6px 12px",
-                      border: `1px solid ${palette.primaryDark}`,
-                      borderRadius: spacing(1.5),
-                      background: palette.primarySoft,
-                      color: palette.primaryDark,
-                      cursor: "pointer"
-                    }}
-                  >
-                    複製
-                  </button>
-                  <button
-                    onClick={() => deleteRow(recipe.id)}
-                    style={{
-                      padding: "6px 12px",
-                      border: `1px solid ${palette.danger}`,
-                        borderRadius: spacing(1.5),
-                        background: "#fee2e2",
-                        color: palette.danger,
-                        cursor: "pointer"
-                      }}
-                    >
-                      削除
-                    </button>
+                    ))}
+                    {group.recipes.length === 0 && <span style={{ color: palette.textMuted, fontSize: typography.size.sm }}>ここに部品をドロップ</span>}
                   </div>
                 </div>
               ))}
-
-              {recipes.length === 0 && <div style={emptyStateStyle}>レシピデータがありません。CSV のインポートまたは行の追加を行ってください。</div>}
+              {productGroups.length === 0 && <p style={{ color: palette.textMuted }}>製品グループがありません。製品またはレシピ行を先に追加してください。</p>}
             </div>
           </div>
         </div>
-      </div>
+      </section>}
+
+      {editMode === "table" && <section style={card({ padding: 0, overflow: "hidden" })}>
+        <div style={{ overflowX: "auto" }}>
+          <div style={{ minWidth: 820 }}>
+            <div style={{ ...tableGridStyle, padding: `${spacing(2)} ${spacing(3)}`, background: palette.surfaceAlt, borderBottom: `1px solid ${palette.border}`, fontWeight: 700 }}>
+              {COLUMNS.map((column) => <div key={column.key}>{column.label}</div>)}
+              <div style={{ textAlign: "center" }}>操作</div>
+            </div>
+
+            {recipes.map((recipe) => {
+              const partMissing = Boolean(recipe.partId) && !partMap.has(recipe.partId);
+              const productMissing = Boolean(recipe.productId) && !productMap.has(recipe.productId);
+              return (
+                <div key={recipe.id} style={{ ...tableGridStyle, padding: `${spacing(2)} ${spacing(3)}`, borderBottom: `1px solid ${palette.border}`, background: partMissing || productMissing ? "#fff7ed" : palette.surface }}>
+                  {COLUMNS.map((column) => {
+                    if (!column.editable) {
+                      return <div key={column.key}>{column.key === "partName" ? getPartName(recipe.partId) : recipe[column.key] || "-"}</div>;
+                    }
+                    const datalistId = column.key === "productId" ? "recipe-product-options" : column.key === "partId" ? "recipe-part-options" : undefined;
+                    const hasError = (column.key === "partId" && partMissing) || (column.key === "productId" && productMissing);
+                    return (
+                      <input
+                        key={column.key}
+                        type={column.type || "text"}
+                        defaultValue={recipe[column.key] ?? ""}
+                        list={datalistId}
+                        onBlur={(event) => updateRecipe(recipe.id, column.key, event.target.value)}
+                        style={inputStyle(hasError)}
+                      />
+                    );
+                  })}
+                  <div style={{ display: "flex", justifyContent: "center", gap: spacing(1) }}>
+                    <button onClick={() => duplicateRecipe(recipe)} style={{ padding: "6px 10px", border: `1px solid ${palette.primaryDark}`, borderRadius: spacing(1.5), background: palette.primarySoft, color: palette.primaryDark, cursor: "pointer" }}>複製</button>
+                    <button onClick={() => deleteRecipe(recipe)} style={{ padding: "6px 10px", border: `1px solid ${palette.danger}`, borderRadius: spacing(1.5), background: "#fee2e2", color: palette.danger, cursor: "pointer" }}>削除</button>
+                  </div>
+                </div>
+              );
+            })}
+
+            {recipes.length === 0 && (
+              <div style={{ padding: spacing(5), textAlign: "center", color: palette.textMuted }}>
+                レシピデータがありません。CSV のインポート、または行の追加を行ってください。
+              </div>
+            )}
+          </div>
+        </div>
+      </section>}
+
+      <datalist id="recipe-product-options">
+        {productOptions.map((option) => <option key={option} value={option} />)}
+      </datalist>
+      <datalist id="recipe-part-options">
+        {partOptions.map((option) => <option key={option} value={option} />)}
+      </datalist>
     </div>
   );
 }
