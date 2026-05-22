@@ -28,6 +28,8 @@ export default function RecipeTable() {
   const [draggingPartId, setDraggingPartId] = useState("");
   const [selectedPartId, setSelectedPartId] = useState("");
   const [editMode, setEditMode] = useState("drag");
+  const [newGroupId, setNewGroupId] = useState("");
+  const [newGroupName, setNewGroupName] = useState("");
 
   const load = useCallback(async () => {
     const [recipeRows, partRows, productRows] = await Promise.all([
@@ -65,6 +67,7 @@ export default function RecipeTable() {
     const groups = new Map();
 
     for (const product of products) {
+      if (product.status !== "template") continue;
       const productId = product.internalId || product.id;
       if (!productId) continue;
       groups.set(productId, {
@@ -180,6 +183,60 @@ export default function RecipeTable() {
   const removeRecipeFromGroup = async (recipe) => {
     await db.recipes.delete(recipe.id);
     setMessage(`${getPartName(recipe.partId)} を製品グループから削除しました。`);
+    await load();
+  };
+
+  const addProductGroup = async () => {
+    const productId = newGroupId.trim();
+    const productName = newGroupName.trim() || productId;
+
+    if (!productId) {
+      setMessage("製品グループIDを入力してください。");
+      return;
+    }
+
+    if (productGroups.some((group) => group.productId === productId)) {
+      setMessage(`製品グループ「${productId}」は既にあります。`);
+      return;
+    }
+
+    if (await db.products.get(productId)) {
+      setMessage(`製品ID「${productId}」は既に使われています。別のIDを指定してください。`);
+      return;
+    }
+
+    await db.products.add({
+      id: productId,
+      name: productName,
+      internalId: productId,
+      status: "template"
+    });
+    setNewGroupId("");
+    setNewGroupName("");
+    setMessage(`製品グループ「${productName}」を追加しました。`);
+    await load();
+  };
+
+  const deleteProductGroup = async (group) => {
+    const count = group.recipes.length;
+    const suffix = count ? `関連するレシピ ${count} 件も削除されます。` : "空のグループを削除します。";
+    if (!window.confirm(`製品グループ「${group.productName}」を削除しますか？\n${suffix}`)) return;
+
+    await db.transaction("rw", db.products, db.recipes, async () => {
+      const relatedRecipes = await db.recipes.where("productId").equals(group.productId).toArray();
+      await db.recipes.bulkDelete(relatedRecipes.map((recipe) => recipe.id));
+
+      const templateProducts = products.filter(
+        (product) =>
+          product.status === "template" &&
+          (product.id === group.productId || product.internalId === group.productId)
+      );
+      if (templateProducts.length) {
+        await db.products.bulkDelete(templateProducts.map((product) => product.id));
+      }
+    });
+
+    setMessage(`製品グループ「${group.productName}」を削除しました。`);
     await load();
   };
 
@@ -305,6 +362,24 @@ export default function RecipeTable() {
     boxShadow: "0 0 0 2px rgba(37, 99, 235, 0.12)"
   };
 
+  const smallInputStyle = {
+    padding: "7px 9px",
+    border: `1px solid ${palette.border}`,
+    borderRadius: spacing(1.5),
+    background: palette.surfaceAlt,
+    color: palette.text
+  };
+
+  const secondaryButtonStyle = {
+    padding: "7px 11px",
+    border: `1px solid ${palette.primaryDark}`,
+    borderRadius: spacing(1.5),
+    background: palette.primarySoft,
+    color: palette.primaryDark,
+    cursor: "pointer",
+    fontWeight: 700
+  };
+
   const productGroupStyle = (isActive = false) => ({
     border: `1px dashed ${isActive ? palette.primary : palette.border}`,
     borderRadius: spacing(3),
@@ -390,7 +465,26 @@ export default function RecipeTable() {
           </div>
 
           <div>
-            <b>製品グループ</b>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: spacing(2), flexWrap: "wrap" }}>
+              <b>製品グループ</b>
+              <div style={{ display: "flex", gap: spacing(2), flexWrap: "wrap" }}>
+                <input
+                  value={newGroupId}
+                  onChange={(event) => setNewGroupId(event.target.value)}
+                  placeholder="製品ID"
+                  style={{ ...smallInputStyle, width: 120 }}
+                />
+                <input
+                  value={newGroupName}
+                  onChange={(event) => setNewGroupName(event.target.value)}
+                  placeholder="製品名"
+                  style={{ ...smallInputStyle, width: 150 }}
+                />
+                <button type="button" onClick={addProductGroup} style={secondaryButtonStyle}>
+                  グループ追加
+                </button>
+              </div>
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: spacing(3), marginTop: spacing(2) }}>
               {productGroups.map((group) => (
                 <div key={group.productId} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleDrop(event, group.productId)} style={productGroupStyle(Boolean(draggingPartId))}>
@@ -399,23 +493,41 @@ export default function RecipeTable() {
                       <div style={{ fontWeight: 800 }}>{group.productName}</div>
                       <div style={{ color: palette.textMuted, fontSize: typography.size.sm, marginBottom: spacing(2) }}>{group.productId}</div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => addPartToProduct(group.productId, selectedPartId)}
-                      disabled={!selectedPartId}
-                      style={{
-                        padding: "5px 9px",
-                        border: `1px solid ${selectedPartId ? palette.primaryDark : palette.border}`,
-                        borderRadius: spacing(1.5),
-                        background: selectedPartId ? palette.primarySoft : palette.surfaceAlt,
-                        color: selectedPartId ? palette.primaryDark : palette.textMuted,
-                        cursor: selectedPartId ? "pointer" : "not-allowed",
-                        fontWeight: 700,
-                        whiteSpace: "nowrap"
-                      }}
-                    >
-                      選択部品を追加
-                    </button>
+                    <div style={{ display: "grid", gap: spacing(1), justifyItems: "end" }}>
+                      <button
+                        type="button"
+                        onClick={() => addPartToProduct(group.productId, selectedPartId)}
+                        disabled={!selectedPartId}
+                        style={{
+                          padding: "5px 9px",
+                          border: `1px solid ${selectedPartId ? palette.primaryDark : palette.border}`,
+                          borderRadius: spacing(1.5),
+                          background: selectedPartId ? palette.primarySoft : palette.surfaceAlt,
+                          color: selectedPartId ? palette.primaryDark : palette.textMuted,
+                          cursor: selectedPartId ? "pointer" : "not-allowed",
+                          fontWeight: 700,
+                          whiteSpace: "nowrap"
+                        }}
+                      >
+                        選択部品を追加
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteProductGroup(group)}
+                        style={{
+                          padding: "5px 9px",
+                          border: `1px solid ${palette.danger}`,
+                          borderRadius: spacing(1.5),
+                          background: "#fee2e2",
+                          color: palette.danger,
+                          cursor: "pointer",
+                          fontWeight: 700,
+                          whiteSpace: "nowrap"
+                        }}
+                      >
+                        グループ削除
+                      </button>
+                    </div>
                   </div>
                   <div style={{ display: "grid", gap: spacing(1) }}>
                     {group.recipes.map((recipe) => (

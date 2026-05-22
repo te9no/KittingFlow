@@ -72,7 +72,7 @@ export default function PickingUI() {
       getProductsWithProgress(),
       getProductTemplates()
     ]);
-    const active = productRows.filter(row => row.progress.state !== STATE_DONE);
+    const active = productRows.filter(row => row.status !== "template" && row.progress.state !== STATE_DONE);
 
     setProducts(active);
     setTemplates(templateRows);
