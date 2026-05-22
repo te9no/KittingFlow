@@ -1,10 +1,29 @@
-.clasp.json
-scripts/deploy-gas.js
-.gas-deploy.json
-src_old/appsscript.json
-src_old/label.js
-src_old/main.js
-src_old/webapp.js
+# dependencies
 node_modules/
-dist/index.html
-dist/assets/
+
+# build output
+dist/
+
+# local deploy credentials / generated files
+.clasp.json
+.gas-deploy.json
+scripts/deploy-gas.js
+src_old/
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# local env
+.env
+.env.*
+!.env.example
+
+# editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
