@@ -26,6 +26,7 @@ export default function RecipeTable() {
   const [products, setProducts] = useState([]);
   const [message, setMessage] = useState("");
   const [draggingPartId, setDraggingPartId] = useState("");
+  const [selectedPartId, setSelectedPartId] = useState("");
   const [editMode, setEditMode] = useState("drag");
 
   const load = useCallback(async () => {
@@ -176,6 +177,12 @@ export default function RecipeTable() {
     await load();
   };
 
+  const removeRecipeFromGroup = async (recipe) => {
+    await db.recipes.delete(recipe.id);
+    setMessage(`${getPartName(recipe.partId)} を製品グループから削除しました。`);
+    await load();
+  };
+
   const addPartToProduct = async (productId, partId) => {
     if (!productId || !partId) return;
 
@@ -210,13 +217,19 @@ export default function RecipeTable() {
 
   const handleDragStart = (event, partId) => {
     setDraggingPartId(partId);
+    setSelectedPartId(partId);
     event.dataTransfer.setData("text/plain", partId);
+    event.dataTransfer.setData("application/x-kittingflow-part-id", partId);
     event.dataTransfer.effectAllowed = "copy";
   };
 
   const handleDrop = (event, productId) => {
     event.preventDefault();
-    const partId = event.dataTransfer.getData("text/plain") || draggingPartId;
+    const partId =
+      event.dataTransfer.getData("application/x-kittingflow-part-id") ||
+      event.dataTransfer.getData("text/plain") ||
+      draggingPartId ||
+      selectedPartId;
     setDraggingPartId("");
     addPartToProduct(productId, partId);
   };
@@ -286,6 +299,12 @@ export default function RecipeTable() {
     cursor: "grab"
   };
 
+  const selectedPartChipStyle = {
+    borderColor: palette.primary,
+    background: palette.primarySoft,
+    boxShadow: "0 0 0 2px rgba(37, 99, 235, 0.12)"
+  };
+
   const productGroupStyle = (isActive = false) => ({
     border: `1px dashed ${isActive ? palette.primary : palette.border}`,
     borderRadius: spacing(3),
@@ -350,7 +369,18 @@ export default function RecipeTable() {
             <b>部品リスト</b>
             <div style={{ display: "grid", gap: spacing(2), marginTop: spacing(2), maxHeight: 380, overflowY: "auto" }}>
               {parts.map((part) => (
-                <div key={part.id} draggable onDragStart={(event) => handleDragStart(event, part.id)} onDragEnd={() => setDraggingPartId("")} style={partChipStyle}>
+                <div
+                  key={part.id}
+                  draggable
+                  onClick={() => setSelectedPartId(part.id)}
+                  onDragStart={(event) => handleDragStart(event, part.id)}
+                  onDragEnd={() => setDraggingPartId("")}
+                  style={{
+                    ...partChipStyle,
+                    ...(selectedPartId === part.id ? selectedPartChipStyle : {})
+                  }}
+                  title="クリックで選択、またはドラッグで追加"
+                >
                   <span style={{ fontWeight: 700 }}>{part.name || part.id}</span>
                   <span style={{ color: palette.textMuted, fontSize: typography.size.sm }}>{part.id} / 在庫 {Number(part.stock || 0)}</span>
                 </div>
@@ -364,13 +394,51 @@ export default function RecipeTable() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: spacing(3), marginTop: spacing(2) }}>
               {productGroups.map((group) => (
                 <div key={group.productId} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleDrop(event, group.productId)} style={productGroupStyle(Boolean(draggingPartId))}>
-                  <div style={{ fontWeight: 800 }}>{group.productName}</div>
-                  <div style={{ color: palette.textMuted, fontSize: typography.size.sm, marginBottom: spacing(2) }}>{group.productId}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: spacing(2) }}>
+                    <div>
+                      <div style={{ fontWeight: 800 }}>{group.productName}</div>
+                      <div style={{ color: palette.textMuted, fontSize: typography.size.sm, marginBottom: spacing(2) }}>{group.productId}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => addPartToProduct(group.productId, selectedPartId)}
+                      disabled={!selectedPartId}
+                      style={{
+                        padding: "5px 9px",
+                        border: `1px solid ${selectedPartId ? palette.primaryDark : palette.border}`,
+                        borderRadius: spacing(1.5),
+                        background: selectedPartId ? palette.primarySoft : palette.surfaceAlt,
+                        color: selectedPartId ? palette.primaryDark : palette.textMuted,
+                        cursor: selectedPartId ? "pointer" : "not-allowed",
+                        fontWeight: 700,
+                        whiteSpace: "nowrap"
+                      }}
+                    >
+                      選択部品を追加
+                    </button>
+                  </div>
                   <div style={{ display: "grid", gap: spacing(1) }}>
                     {group.recipes.map((recipe) => (
-                      <div key={recipe.id} style={{ display: "flex", justifyContent: "space-between", gap: spacing(2), fontSize: typography.size.sm }}>
+                      <div key={recipe.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: spacing(2), fontSize: typography.size.sm }}>
                         <span>{getPartName(recipe.partId)}</span>
-                        <b>x {Number(recipe.qty || 0)}</b>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: spacing(1) }}>
+                          <b>x {Number(recipe.qty || 0)}</b>
+                          <button
+                            type="button"
+                            onClick={() => removeRecipeFromGroup(recipe)}
+                            style={{
+                              padding: "2px 7px",
+                              border: `1px solid ${palette.danger}`,
+                              borderRadius: spacing(1),
+                              background: "#fee2e2",
+                              color: palette.danger,
+                              cursor: "pointer",
+                              fontSize: typography.size.xs
+                            }}
+                          >
+                            削除
+                          </button>
+                        </span>
                       </div>
                     ))}
                     {group.recipes.length === 0 && <span style={{ color: palette.textMuted, fontSize: typography.size.sm }}>ここに部品をドロップ</span>}
