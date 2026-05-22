@@ -11,6 +11,7 @@ const COLUMNS = [
 
 const COLUMN_KEYS = COLUMNS.map((c) => c.key);
 const PLACEHOLDER_PREFIX = "__tmp_part__";
+const PART_ID_DATALIST_ID = "parts-id-options";
 
 export default function PartsTable() {
   const [parts, setParts] = useState([]);
@@ -105,6 +106,16 @@ export default function PartsTable() {
   };
 
   const findOriginal = (id) => parts.find((part) => part.id === id);
+
+  const partIdOptions = useMemo(() => {
+    const ids = new Set();
+    for (const part of parts) {
+      if (part?.id && !part.id.startsWith(PLACEHOLDER_PREFIX)) {
+        ids.add(part.id);
+      }
+    }
+    return Array.from(ids);
+  }, [parts]);
 
   const incrementPartId = (value) => {
     const match = String(value ?? "").match(/^(.*?)(\d+)$/);
@@ -503,70 +514,103 @@ export default function PartsTable() {
 
           <div ref={tableScrollRef} style={scrollAreaStyle}>
             <div style={gridWrapperStyle}>
-              {parts.map((part, rowIndex) => (
-                <div key={part.id} style={rowStyle}>
-                  {COLUMNS.map((column, columnIndex) => (
-                    <div key={column.key} style={{ ...cellPaddingStyle, textAlign: column.align }}>
-                      <input
-                        ref={(node) => {
-                          const key = `${part.id}:${column.key}`;
-                          if (node) cellRefs.current[key] = node;
-                          else delete cellRefs.current[key];
-                        }}
-                        type={column.type === "number" ? "number" : "text"}
-                        value={displayValue(part.id, column.key)}
-                        onChange={(event) => setDraftValue(part.id, column.key, event.target.value)}
-                        onBlur={() => handleBlur(part.id, column.key)}
-                        onKeyDown={(event) => handleKeyDown(event, rowIndex, columnIndex)}
+              {parts.map((part, rowIndex) => {
+                const liveId = displayValue(part.id, "id").trim();
+                const liveName = displayValue(part.id, "name").trim();
+                const stockRaw = displayValue(part.id, "stock").trim();
+                const stockNumber = Number(stockRaw);
+                const rowValidation = {
+                  id: liveId.length === 0,
+                  name: liveName.length === 0,
+                  stock: stockRaw === "" || !Number.isFinite(stockNumber)
+                };
+                const rowHasError = Object.values(rowValidation).some(Boolean);
+                return (
+                  <div
+                    key={part.id}
+                    style={{
+                      ...rowStyle,
+                      background: rowHasError ? "#fff5f5" : "transparent",
+                      borderLeft: rowHasError ? `3px solid ${palette.danger}` : "3px solid transparent"
+                    }}
+                  >
+                    {COLUMNS.map((column, columnIndex) => {
+                      const columnError =
+                        (column.key === "id" && rowValidation.id) ||
+                        (column.key === "name" && rowValidation.name) ||
+                        (column.key === "stock" && rowValidation.stock);
+                      const datalistId = column.key === "id" ? PART_ID_DATALIST_ID : undefined;
+                      return (
+                        <div key={column.key} style={{ ...cellPaddingStyle, textAlign: column.align }}>
+                          <input
+                            ref={(node) => {
+                              const key = `${part.id}:${column.key}`;
+                              if (node) cellRefs.current[key] = node;
+                              else delete cellRefs.current[key];
+                            }}
+                            type={column.type === "number" ? "number" : "text"}
+                            value={displayValue(part.id, column.key)}
+                            onChange={(event) => setDraftValue(part.id, column.key, event.target.value)}
+                            onBlur={() => handleBlur(part.id, column.key)}
+                            onKeyDown={(event) => handleKeyDown(event, rowIndex, columnIndex)}
+                            list={datalistId}
+                            aria-invalid={columnError || undefined}
+                            style={{
+                              width: "100%",
+                              boxSizing: "border-box",
+                              padding: "6px 8px",
+                              border: `1px solid ${columnError ? palette.danger : palette.border}`,
+                              borderRadius: spacing(1.5),
+                              fontSize: typography.size.sm,
+                              textAlign: column.align,
+                              background: columnError ? "#fff1f2" : palette.surfaceAlt
+                            }}
+                          />
+                        </div>
+                      );
+                    })}
+                    <div style={{ display: "flex", justifyContent: "center", gap: spacing(1) }}>
+                      <button
+                        onClick={() => clonePart(part.id)}
                         style={{
-                          width: "100%",
-                          boxSizing: "border-box",
-                          padding: "6px 8px",
-                          border: `1px solid ${palette.border}`,
+                          padding: "6px 12px",
+                          border: `1px solid ${palette.primaryDark}`,
                           borderRadius: spacing(1.5),
-                          fontSize: typography.size.sm,
-                          textAlign: column.align,
-                          background: palette.surfaceAlt
+                          background: palette.primarySoft,
+                          color: palette.primaryDark,
+                          cursor: "pointer"
                         }}
-                      />
+                      >
+                        複製
+                      </button>
+                      <button
+                        onClick={() => deleteRow(part.id)}
+                        style={{
+                          padding: "6px 12px",
+                          border: `1px solid ${palette.danger}`,
+                          borderRadius: spacing(1.5),
+                          background: "#fee2e2",
+                          color: palette.danger,
+                          cursor: "pointer"
+                        }}
+                      >
+                        削除
+                      </button>
                     </div>
-                  ))}
-                  <div style={{ display: "flex", justifyContent: "center", gap: spacing(1) }}>
-                    <button
-                      onClick={() => clonePart(part.id)}
-                      style={{
-                        padding: "6px 12px",
-                        border: `1px solid ${palette.primaryDark}`,
-                        borderRadius: spacing(1.5),
-                        background: palette.primarySoft,
-                        color: palette.primaryDark,
-                        cursor: "pointer"
-                      }}
-                    >
-                      複製
-                    </button>
-                    <button
-                      onClick={() => deleteRow(part.id)}
-                      style={{
-                        padding: "6px 12px",
-                        border: `1px solid ${palette.danger}`,
-                        borderRadius: spacing(1.5),
-                        background: "#fee2e2",
-                        color: palette.danger,
-                        cursor: "pointer"
-                      }}
-                    >
-                      削除
-                    </button>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {parts.length === 0 && <div style={emptyStateStyle}>部品データがありません。CSV のインポートまたは行の追加を行ってください。</div>}
             </div>
           </div>
         </div>
       </div>
+      <datalist id={PART_ID_DATALIST_ID}>
+        {partIdOptions.map((option) => (
+          <option key={`parts-option-${option}`} value={option} />
+        ))}
+      </datalist>
     </div>
   );
 }
