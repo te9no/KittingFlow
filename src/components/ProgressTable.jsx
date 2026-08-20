@@ -25,7 +25,7 @@ const modalStyle = {
 };
 
 const containerStyle = {
-  maxWidth: 1100,
+  maxWidth: 1400,
   margin: "24px auto 48px",
   padding: "0 16px"
 };

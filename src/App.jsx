@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { initSampleDataIfEmpty } from "./db";
+import { db, initSampleDataIfEmpty, PROGRESS_STATE_DONE } from "./db";
 import PartsTable from "./components/PartsTable";
 import PickingUI from "./components/PickingUI";
 import ImportExportPanel from "./components/ImportExportPanel";
@@ -110,6 +110,33 @@ function NavIcon({ name }) {
 }
 
 function HomePage({ onNavigate }) {
+  const [metrics, setMetrics] = useState({ parts: 0, stock: 0, active: 0, recipes: 0, lowStock: 0 });
+
+  useEffect(() => {
+    let mounted = true;
+    const loadMetrics = async () => {
+      await initSampleDataIfEmpty();
+      const [parts, products, recipes, progress] = await Promise.all([
+        db.parts.toArray(),
+        db.products.toArray(),
+        db.recipes.toArray(),
+        db.progress.toArray()
+      ]);
+      if (!mounted) return;
+      const progressMap = new Map(progress.map((item) => [item.productId, item]));
+      const activeProducts = products.filter((product) => product.status !== "template" && progressMap.get(product.id)?.state !== PROGRESS_STATE_DONE);
+      setMetrics({
+        parts: parts.length,
+        stock: parts.reduce((sum, part) => sum + Number(part.stock || 0), 0),
+        active: activeProducts.length,
+        recipes: new Set(recipes.map((recipe) => recipe.productId)).size,
+        lowStock: parts.filter((part) => Number(part.stock || 0) <= 10).length
+      });
+    };
+    loadMetrics().catch((error) => console.error("Dashboard metrics failed", error));
+    return () => { mounted = false; };
+  }, []);
+
   const heroStyle = {
     position: "relative",
     overflow: "hidden",
@@ -150,9 +177,31 @@ function HomePage({ onNavigate }) {
     "\u30c9\u30e9\u30c3\u30b0\u304c\u4e0d\u5b89\u5b9a\u306a\u74b0\u5883\u3067\u306f\u3001\u300c\u9078\u629e\u90e8\u54c1\u3092\u8ffd\u52a0\u300d\u30dc\u30bf\u30f3\u3092\u4f7f\u3063\u3066\u304f\u3060\u3055\u3044\u3002",
     "\u30c7\u30fc\u30bf\u79fb\u884c\u3084\u30d0\u30c3\u30af\u30a2\u30c3\u30d7\u306f CSV \u753b\u9762\u304b\u3089\u884c\u3048\u307e\u3059\u3002"
   ];
+  const dashboardItems = [
+    { key: "parts", label: "部品マスター", value: `${metrics.parts} 種`, detail: `総在庫 ${metrics.stock.toLocaleString()} 個`, target: "parts", tone: "blue" },
+    { key: "active", label: "稼働中の製品", value: `${metrics.active} 件`, detail: "ピッキング対象", target: "picking", tone: "cyan" },
+    { key: "recipes", label: "登録レシピ", value: `${metrics.recipes} 件`, detail: "製品グループ", target: "recipes", tone: "violet" },
+    { key: "lowStock", label: "在庫アラート", value: `${metrics.lowStock} 件`, detail: metrics.lowStock ? "在庫10個以下" : "問題ありません", target: "requirementSelect", tone: metrics.lowStock ? "amber" : "green" }
+  ];
 
   return (
     <div className="home-page" style={{ display: "grid", gap: spacing(6) }}>
+      <section className="home-dashboard" aria-label="オペレーション概要">
+        <div className="home-dashboard__heading">
+          <div><span>OPERATION OVERVIEW</span><h2>今日のオペレーション</h2></div>
+          <span className="home-dashboard__status"><i />ローカルDB 接続中</span>
+        </div>
+        <div className="home-dashboard__grid">
+          {dashboardItems.map((item) => (
+            <button className={`dashboard-metric dashboard-metric--${item.tone}`} key={item.key} type="button" onClick={() => onNavigate(item.target)}>
+              <span className="dashboard-metric__icon"><NavIcon name={item.target} /></span>
+              <span className="dashboard-metric__copy"><small>{item.label}</small><strong>{item.value}</strong><em>{item.detail}</em></span>
+              <span className="dashboard-metric__arrow" aria-hidden="true">→</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
       <section className="home-hero" style={heroStyle}>
         <div style={{ maxWidth: 720, position: "relative", zIndex: 1 }}>
           <div style={{ color: "#7dd3fc", fontWeight: 900, marginBottom: spacing(3), letterSpacing: "0.08em" }}>{text.appName}</div>
@@ -267,6 +316,11 @@ function App() {
             {renderTabButton("io", text.csv, "データ")}
             {renderTabButton("requirementSelect", text.requirements, "集計")}
           </nav>
+          <div className="desktop-sidebar-footer">
+            <span>LOCAL WORKSPACE</span>
+            <strong><i /> Browser Database</strong>
+            <small>データはこの端末に保存されます</small>
+          </div>
         </div>
       </header>
 

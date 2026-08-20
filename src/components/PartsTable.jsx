@@ -26,11 +26,11 @@ const labels = {
 };
 
 const COLUMNS = [
-  { key: "id", label: "\u90e8\u54c1ID", align: "left", width: "minmax(140px, 1fr)" },
-  { key: "name", label: "\u540d\u79f0", align: "left", width: "minmax(220px, 1.4fr)" },
-  { key: "stock", label: "\u5728\u5eab", align: "right", type: "number", width: "minmax(100px, 0.6fr)" },
-  { key: "supplier", label: "\u4ed5\u5165\u308c\u5148", align: "left", width: "minmax(170px, 1fr)" },
-  { key: "imageUrl", label: "\u753b\u50cfURL", align: "left", width: "minmax(220px, 1.2fr)" }
+  { key: "id", label: "\u90e8\u54c1ID", align: "left", width: "minmax(112px, 0.9fr)" },
+  { key: "name", label: "\u540d\u79f0", align: "left", width: "minmax(168px, 1.35fr)" },
+  { key: "stock", label: "\u5728\u5eab", align: "right", type: "number", width: "minmax(72px, 0.48fr)" },
+  { key: "supplier", label: "\u4ed5\u5165\u308c\u5148", align: "left", width: "minmax(120px, 0.9fr)" },
+  { key: "imageUrl", label: "\u753b\u50cfURL", align: "left", width: "minmax(145px, 1.05fr)" }
 ];
 
 const PARAM_COLUMNS = [
@@ -135,7 +135,8 @@ export default function PartsTable() {
     if (typeof document === "undefined") return;
     const gap = 12;
     const appHeader = document.querySelector("[data-app-header='true']");
-    const headerHeight = appHeader?.getBoundingClientRect().height ?? 0;
+    const usesDesktopSidebar = window.matchMedia("(min-width: 1200px)").matches;
+    const headerHeight = usesDesktopSidebar ? 0 : appHeader?.getBoundingClientRect().height ?? 0;
     const nextToolbarTop = `${Math.round(headerHeight + gap)}px`;
     setToolbarOffset((prev) => (prev === nextToolbarTop ? prev : nextToolbarTop));
 
@@ -415,7 +416,7 @@ export default function PartsTable() {
     }
   };
 
-  const gridTemplateColumns = useMemo(() => [...COLUMNS.map((column) => column.width), "minmax(220px, 1fr)"].join(" "), []);
+  const gridTemplateColumns = useMemo(() => [...COLUMNS.map((column) => column.width), "minmax(194px, 1fr)"].join(" "), []);
 
   const toolbarStyle = useMemo(() => ({
     position: "sticky",
@@ -493,14 +494,14 @@ export default function PartsTable() {
 
       <div className="parts-desktop-table" style={card({ padding: "0" })}>
         <div style={{ overflowX: "auto" }}>
-          <div style={{ minWidth: 980 }}>
+          <div className="parts-table-header-width" style={{ minWidth: 980 }}>
             <div style={headerRowStyle}>
               {COLUMNS.map((column) => <div key={column.key} style={{ fontWeight: 700, fontSize: typography.size.sm, textAlign: column.align }}>{column.label}</div>)}
               <div style={{ fontWeight: 700, fontSize: typography.size.sm, textAlign: "center" }}>{labels.actions}</div>
             </div>
           </div>
           <div ref={tableScrollRef} style={scrollAreaStyle}>
-            <div style={{ minWidth: 980 }}>
+            <div className="parts-table-body-width" style={{ minWidth: 980 }}>
               {parts.map((part, rowIndex) => {
                 const liveId = displayValue(part.id, "id").trim();
                 const liveName = displayValue(part.id, "name").trim();

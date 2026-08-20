@@ -121,7 +121,7 @@ export default function ImportExportPanel() {
   return (
     <div className="mobile-page import-export-page" style={{ maxWidth: layout.maxWidth, margin: "0 auto", padding: `${spacing(4)} 0` }}>
       <h3 style={{ marginBottom: spacing(3), fontWeight: typography.headingWeight }}>データ入出力</h3>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: spacing(3) }}>
+      <div className="data-grid" style={{ display: "grid", gridTemplateColumns: "1fr", gap: spacing(3) }}>
         <div className="data-card" style={card()}>
           <b>CSVインポート（KittingFlow v1.0 形式）</b>
           <div style={{ marginTop: spacing(2), display: "grid", gap: spacing(2) }}>

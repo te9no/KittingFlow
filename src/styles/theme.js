@@ -43,7 +43,7 @@ const shadows = {
 const spacing = (factor) => `${factor * 4}px`;
 
 const layout = {
-  maxWidth: 1100
+  maxWidth: 1400
 };
 
 function applyGlobalTheme() {
