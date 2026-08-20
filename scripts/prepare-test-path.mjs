@@ -8,6 +8,8 @@ await mkdir(testDirectory, { recursive: true });
 await Promise.all([
   cp(resolve(outputDirectory, "index.html"), resolve(testDirectory, "index.html")),
   cp(resolve(outputDirectory, "favicon.svg"), resolve(testDirectory, "favicon.svg")),
+  cp(resolve(outputDirectory, "manifest.webmanifest"), resolve(testDirectory, "manifest.webmanifest")),
+  cp(resolve(outputDirectory, "sw.js"), resolve(testDirectory, "sw.js")),
   cp(resolve(outputDirectory, "assets"), resolve(testDirectory, "assets"), { recursive: true })
 ]);
 

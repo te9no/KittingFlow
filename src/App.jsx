@@ -89,6 +89,26 @@ function Logo() {
   );
 }
 
+const navIconPaths = {
+  home: ["M3 11.5 12 4l9 7.5", "M5 10.5V20h5v-6h4v6h5v-9.5"],
+  picking: ["M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z", "m8 3v9m-8-4.5 8 4.5 8-4.5", "m9 16 2 2 4-4"],
+  parts: ["M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"],
+  recipes: ["M7 4h10a2 2 0 0 1 2 2v14H5V6a2 2 0 0 1 2-2Z", "M9 2h6v4H9zM8 11h8M8 15h8"],
+  progress: ["M4 19V9M10 19V5M16 19v-7M22 19H2"],
+  io: ["M5 7c0 2 3.1 3.5 7 3.5S19 9 19 7s-3.1-3.5-7-3.5S5 5 5 7Z", "M5 7v5c0 2 3.1 3.5 7 3.5M19 7v5c0 2-3.1 3.5-7 3.5", "M8 20h8m-2-2 2 2-2 2"],
+  requirementSelect: ["M5 3h14v18H5z", "M8 7h8M8 11h2m3 0h3M8 15h2m3 0h3"]
+};
+
+function NavIcon({ name }) {
+  return (
+    <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      {(navIconPaths[name] || []).map((path) => (
+        <path key={path} d={path} />
+      ))}
+    </svg>
+  );
+}
+
 function HomePage({ onNavigate }) {
   const heroStyle = {
     position: "relative",
@@ -173,8 +193,19 @@ function App() {
     applyGlobalTheme();
   }, []);
 
+  useEffect(() => {
+    if (!import.meta.env.PROD || !("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.register("./sw.js").catch((error) => {
+      console.warn("Service worker registration failed", error);
+    });
+  }, []);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [tab]);
+
   const renderTabButton = useCallback(
-    (key, label) => {
+    (key, label, mobileLabel) => {
       const active = tab === key;
       const hoverHandlers = createHoverHandlers(
         () => buttonStyles.tab(active),
@@ -182,8 +213,16 @@ function App() {
         () => !active
       );
       return (
-        <button key={key} onClick={() => setTab(key)} style={buttonStyles.tab(active)} {...hoverHandlers}>
-          {label}
+        <button
+          key={key}
+          onClick={() => setTab(key)}
+          style={buttonStyles.tab(active)}
+          aria-current={active ? "page" : undefined}
+          {...hoverHandlers}
+        >
+          <NavIcon name={key} />
+          <span className="nav-label nav-label--desktop">{label}</span>
+          <span className="nav-label nav-label--mobile">{mobileLabel}</span>
         </button>
       );
     },
@@ -220,13 +259,13 @@ function App() {
         <div className="app-header__inner" style={headerInnerStyle}>
           <Logo />
           <nav className="app-nav" style={navStyle} aria-label="メインナビゲーション">
-            {renderTabButton("home", text.home)}
-            {renderTabButton("picking", text.picking)}
-            {renderTabButton("parts", text.parts)}
-            {renderTabButton("recipes", text.recipes)}
-            {renderTabButton("progress", text.progress)}
-            {renderTabButton("io", text.csv)}
-            {renderTabButton("requirementSelect", text.requirements)}
+            {renderTabButton("home", text.home, "ホーム")}
+            {renderTabButton("picking", text.picking, "作業")}
+            {renderTabButton("parts", text.parts, "部品")}
+            {renderTabButton("recipes", text.recipes, "レシピ")}
+            {renderTabButton("progress", text.progress, "進捗")}
+            {renderTabButton("io", text.csv, "データ")}
+            {renderTabButton("requirementSelect", text.requirements, "集計")}
           </nav>
         </div>
       </header>

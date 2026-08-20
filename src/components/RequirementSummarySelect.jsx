@@ -190,7 +190,7 @@ export default function RequirementSummarySelect() {
 
       {summary.length > 0 && (
         <div style={{ marginTop: spacing(4) }}>
-          <div style={card({ padding: "0", overflowX: "auto" })}>
+          <div className="requirements-desktop-table" style={card({ padding: "0", overflowX: "auto" })}>
             <table
               style={{
                 width: "100%",
@@ -233,7 +233,24 @@ export default function RequirementSummarySelect() {
             </table>
           </div>
 
-          <button onClick={exportCSV} style={{ marginTop: spacing(3), ...buttonBase, background: palette.surfaceAlt }}>
+          <div className="requirements-mobile-results" aria-label="必要部品の集計結果">
+            {summary.map((r) => (
+              <article className={`requirements-result-card${r.shortage > 0 ? " requirements-result-card--shortage" : ""}`} key={`mobile-${r.partId}`}>
+                <div className="requirements-result-card__header">
+                  <div><span>{r.partId}</span><h3>{r.name}</h3></div>
+                  <strong>{r.shortage > 0 ? `${r.shortage}個不足` : "在庫OK"}</strong>
+                </div>
+                <div className="requirements-result-card__numbers">
+                  <div><span>必要数</span><b>{r.required}</b></div>
+                  <div><span>在庫</span><b>{r.stock}</b></div>
+                  <div><span>セット</span><b>{r.sets}</b></div>
+                  <div><span>1セット</span><b>{r.perSet}</b></div>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <button className="requirements-export" onClick={exportCSV} style={{ marginTop: spacing(3), ...buttonBase, background: palette.surfaceAlt }}>
             CSV出力
           </button>
         </div>

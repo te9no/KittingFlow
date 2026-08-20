@@ -172,125 +172,98 @@ async function next() {
     }
   }
 
-  return (
-    <div className="mobile-page picking-page" style={{ maxWidth: 620, margin: "0 auto", padding: "16px", textAlign: "center" }}>
-      <h3>{"📦 " + LABEL_PICKING}</h3>
+  const visibleStep = current ? Math.min(progress.currentIndex + 1, parts.length) : 0;
+  const completionPercent = parts.length ? Math.round((visibleStep / parts.length) * 100) : 0;
 
-      <div style={{ margin: "8px 0" }}>
-        <label>
-          {LABEL_PRODUCT}:
-          <select className="picking-product-select" value={productId} onChange={(event) => setProductId(event.target.value)} style={{ marginLeft: 8, padding: "6px 8px" }}>
-            {products.map((product) => (
-              <option key={product.id} value={product.id}>{`${product.id} - ${product.name}`}</option>
-            ))}
-          </select>
-        </label>
-      </div>
+  return (
+    <div className="mobile-page picking-page" style={{ maxWidth: 680, margin: "0 auto", padding: "16px" }}>
+      <header className="picking-heading">
+        <span>FIELD MODE</span>
+        <h2>{LABEL_PICKING}</h2>
+        <p>表示された部品を取り出し、完了したら大きなボタンをタップします。</p>
+      </header>
+
+      <section className="picking-selector">
+        <label htmlFor="picking-product">作業対象</label>
+        <select id="picking-product" className="picking-product-select" value={productId} onChange={(event) => setProductId(event.target.value)}>
+          {products.length === 0 && <option value="">対象製品なし</option>}
+          {products.map((product) => (
+            <option key={product.id} value={product.id}>{`${product.id} - ${product.name}`}</option>
+          ))}
+        </select>
+      </section>
 
       {!productId ? (
-        <p style={{ marginTop: 16, color: "#666" }}>{MSG_NO_ACTIVE}</p>
+        <div className="picking-empty-state"><span aria-hidden="true">＋</span><strong>作業対象がありません</strong><p>{MSG_NO_ACTIVE}</p></div>
       ) : !current ? (
-        <p style={{ marginTop: 16, color: "#666" }}>{MSG_NO_RECIPE}</p>
+        <div className="picking-empty-state"><span aria-hidden="true">!</span><strong>レシピが未登録です</strong><p>{MSG_NO_RECIPE}</p></div>
       ) : (
-        <div>
-          <p>
-            <b>{LABEL_STATE}:</b> {progress.state} <b>{LABEL_STAGE}:</b> {progress.currentIndex + 1}/{parts.length}
-          </p>
-          {current.imageUrl ? (
-            <img
-              src={current.imageUrl}
-              alt={current.name}
-              width={220}
-              height={220}
-              style={{ border: "1px solid #ddd", borderRadius: 8 }}
-            />
-          ) : (
-            <div
-              style={{
-                width: 220,
-                height: 220,
-                border: "1px dashed #bbb",
-                borderRadius: 8,
-                margin: "0 auto",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#777"
-              }}
-            >
-              {LABEL_IMAGE_NONE}
-            </div>
-          )}
-          <p style={{ fontSize: "1.1rem", marginTop: 8 }}>{`${current.name} × ${current.qty}`}</p>
-          <p style={{ color: "#444" }}>{LABEL_STOCK}: {current.stock}</p>
-          <div style={{ marginTop: 12 }}>
-            <button
-              onClick={next}
-              style={primaryStyle}
-              {...primaryHoverHandlers}
-              disabled={!canProceed}
-            >
-              {buttonLabel}
-            </button>
-            <button
-              onClick={resetFlow}
-              style={resetStyle}
-              {...resetHoverHandlers}
-            >
-              {LABEL_RESET}
-            </button>
+        <article className="picking-work-card">
+          <div className="picking-progress-head">
+            <div><span>{LABEL_STATE}</span><strong>{progress.state}</strong></div>
+            <div><span>{LABEL_STAGE}</span><strong>{visibleStep} / {parts.length}</strong></div>
           </div>
-          {msg && <p style={{ marginTop: 8 }}>{msg}</p>}
-        </div>
+          <div className="picking-progress-track" aria-label={`進捗 ${completionPercent}%`}>
+            <span style={{ width: `${completionPercent}%` }} />
+          </div>
+
+          <div className="picking-part-visual">
+            {current.imageUrl ? (
+              <img src={current.imageUrl} alt={current.name} />
+            ) : (
+              <div className="picking-image-placeholder"><span aria-hidden="true">◇</span>{LABEL_IMAGE_NONE}</div>
+            )}
+            <span className="picking-step-chip">STEP {visibleStep}</span>
+          </div>
+
+          <div className="picking-part-info">
+            <span className="picking-part-id">{current.partId}</span>
+            <h3>{current.name}</h3>
+            <div className="picking-quantity"><span>必要数</span><strong>{current.qty}</strong><small>個</small></div>
+            <div className="picking-stock"><span>{LABEL_STOCK}</span><strong>{current.stock}</strong></div>
+          </div>
+
+          <div className="picking-actions">
+            <button className="picking-next-button" onClick={next} style={primaryStyle} {...primaryHoverHandlers} disabled={!canProceed}>
+              <span>{lastStep ? "この製品を" : "この部品を"}</span>
+              <strong>{buttonLabel}</strong>
+            </button>
+            <button className="picking-reset-button" onClick={resetFlow} style={resetStyle} {...resetHoverHandlers}>{LABEL_RESET}</button>
+          </div>
+          {msg && <div className="picking-message" role="status">{msg}</div>}
+        </article>
       )}
 
       {templates.length > 0 && (
-        <div style={{ marginTop: 24, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: "12px", textAlign: "left" }}>
-          <b>{LABEL_CREATE_SECTION}</b>
-          <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-            <label style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
-              {LABEL_TEMPLATE}
-              <select value={selectedTemplate} onChange={(event) => setSelectedTemplate(event.target.value)} style={{ marginTop: 4 }}>
+        <details className="picking-create-panel">
+          <summary><span>＋</span>{LABEL_CREATE_SECTION}</summary>
+          <div className="picking-create-panel__body">
+            <label>
+              <span>{LABEL_TEMPLATE}</span>
+              <select value={selectedTemplate} onChange={(event) => setSelectedTemplate(event.target.value)}>
                 {templates.map((template) => (
                   <option key={template.internalId} value={template.internalId}>{`${template.internalId} - ${template.name}`}</option>
                 ))}
               </select>
             </label>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+            <label>
               <span>{LABEL_CREATED_ID}</span>
-              <input
-                value={generatedFancyId}
-                readOnly
-                placeholder="未生成"
-                style={{ marginTop: 4, width: "100%", boxSizing: "border-box", padding: "6px 8px", background: "#f9fafb" }}
-              />
-            </div>
-            <button
-              onClick={createNewProduction}
-              disabled={!canCreate}
-              style={createButtonStyle}
-              {...createHoverHandlersObj}
-            >
-              {LABEL_CREATE}
-            </button>
+              <input value={generatedFancyId} readOnly placeholder="登録時に自動生成" />
+            </label>
+            <button onClick={createNewProduction} disabled={!canCreate} style={createButtonStyle} {...createHoverHandlersObj}>{LABEL_CREATE}</button>
+          </div>
+        </details>
+      )}
+      {showDialog && (
+        <div className="app-modal-overlay picking-complete-overlay">
+          <div className="app-modal picking-complete-modal" role="dialog" aria-modal="true" aria-labelledby="picking-complete-title">
+            <span className="picking-complete-icon" aria-hidden="true">✓</span>
+            <h3 id="picking-complete-title">ピッキング完了</h3>
+            <p>すべての部品を処理しました。お疲れさまでした。</p>
+            <button onClick={() => setShowDialog(false)}>閉じる</button>
           </div>
         </div>
       )}
-      {showDialog && (
-    <div style={{
-      position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-      background: 'rgba(0,0,0,0.4)', display: 'flex',
-      justifyContent: 'center', alignItems: 'center', zIndex: 999
-    }}>
-      <div style={{
-        background: '#fff', padding: 24, borderRadius: 8, textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.2)'
-      }}>
-        <h3>🎉 ピッキング完了！</h3>
-        <p>全ての部品のピッキングが完了しました。お疲れさまでした。</p>
-        <button onClick={() => setShowDialog(false)} style={{marginTop:12}}>閉じる</button>
-      </div>
-    </div>
-    )}
     </div>
   );
 }

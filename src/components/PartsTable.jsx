@@ -491,7 +491,7 @@ export default function PartsTable() {
 
       {message && <div style={{ marginBottom: spacing(3), padding: `${spacing(2)} ${spacing(3)}`, background: palette.primarySoft, border: `1px solid ${palette.primaryDark}1a`, borderRadius: spacing(2), color: palette.primaryDark }}>{message}</div>}
 
-      <div style={card({ padding: "0" })}>
+      <div className="parts-desktop-table" style={card({ padding: "0" })}>
         <div style={{ overflowX: "auto" }}>
           <div style={{ minWidth: 980 }}>
             <div style={headerRowStyle}>
@@ -549,8 +549,70 @@ export default function PartsTable() {
           </div>
         </div>
       </div>
+
+      <div className="parts-mobile-list" aria-label="部品カード一覧">
+        {parts.map((part, rowIndex) => {
+          const liveId = displayValue(part.id, "id").trim();
+          const liveName = displayValue(part.id, "name").trim();
+          const stockRaw = displayValue(part.id, "stock").trim();
+          const rowValidation = {
+            id: liveId.length === 0,
+            name: liveName.length === 0,
+            stock: stockRaw === "" || parseNumber(stockRaw) == null
+          };
+          const rowHasError = Object.values(rowValidation).some(Boolean);
+          return (
+            <article className={`part-mobile-card${rowHasError ? " part-mobile-card--error" : ""}`} key={`mobile-${part.id}`}>
+              <div className="part-mobile-card__header">
+                <div className="part-mobile-card__identity">
+                  {part.imageUrl ? (
+                    <img className="part-mobile-card__thumb" src={part.imageUrl} alt="" />
+                  ) : (
+                    <span className="part-mobile-card__thumb part-mobile-card__thumb--placeholder" aria-hidden="true">◇</span>
+                  )}
+                  <div>
+                    <strong>{liveName || "名称未入力"}</strong>
+                    <span>{liveId || "部品ID未入力"}</span>
+                  </div>
+                </div>
+                <span className="part-mobile-card__stock">在庫 <b>{stockRaw || "0"}</b></span>
+              </div>
+
+              <div className="part-mobile-fields">
+                {COLUMNS.map((column, columnIndex) => {
+                  const columnError = (column.key === "id" && rowValidation.id) || (column.key === "name" && rowValidation.name) || (column.key === "stock" && rowValidation.stock);
+                  return (
+                    <label className={`part-mobile-field part-mobile-field--${column.key}`} key={`mobile-${part.id}-${column.key}`}>
+                      <span>{column.label}</span>
+                      <input
+                        type={column.type === "number" ? "number" : "text"}
+                        value={displayValue(part.id, column.key)}
+                        onChange={(event) => !column.readOnly && setDraftValue(part.id, column.key, event.target.value)}
+                        onBlur={() => handleBlur(part.id, column.key)}
+                        onKeyDown={(event) => handleKeyDown(event, rowIndex, columnIndex)}
+                        list={column.key === "id" ? PART_ID_DATALIST_ID : undefined}
+                        readOnly={column.readOnly}
+                        aria-invalid={columnError || undefined}
+                        style={inputStyle(column, columnError)}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="part-mobile-card__actions">
+                <button onClick={() => openParamEditor(part.id)}>{labels.params}</button>
+                <button onClick={() => clonePart(part.id)}>{labels.clone}</button>
+                <button className="is-danger" onClick={() => deleteRow(part.id)}>{labels.delete}</button>
+              </div>
+            </article>
+          );
+        })}
+        {parts.length === 0 && <div className="mobile-empty-state">{labels.empty}</div>}
+      </div>
       {modalPart && (
         <div
+          className="app-modal-overlay"
           role="dialog"
           aria-modal="true"
           aria-label={labels.paramsTitle}
@@ -567,7 +629,7 @@ export default function PartsTable() {
             if (event.target === event.currentTarget) closeParamEditor();
           }}
         >
-          <div style={{ width: "min(720px, 100%)", ...card({ padding: spacing(5) }) }}>
+          <div className="app-modal parts-parameter-modal" style={{ width: "min(720px, 100%)", ...card({ padding: spacing(5) }) }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: spacing(3), alignItems: "start", marginBottom: spacing(4) }}>
               <div>
                 <h3 style={{ margin: 0, fontWeight: typography.headingWeight }}>{labels.paramsTitle}</h3>

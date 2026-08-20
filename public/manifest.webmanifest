@@ -1,0 +1,19 @@
+{
+  "name": "KittingFlow",
+  "short_name": "KittingFlow",
+  "description": "部品・レシピ・ピッキング進捗を一元管理する現場向けツール",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f6fb",
+  "theme_color": "#0f172a",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

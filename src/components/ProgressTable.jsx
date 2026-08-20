@@ -282,6 +282,8 @@ export default function ProgressTable() {
   }
 
   async function remove(productId) {
+    const target = rows.find((row) => row.productId === productId);
+    if (!window.confirm(`製品「${target?.productName || productId}」を削除しますか？`)) return;
     await db.transaction("rw", db.products, db.progress, async () => {
       await db.products.delete(productId);
       await db.progress.delete(productId);
@@ -439,7 +441,8 @@ export default function ProgressTable() {
       </div>
 
       {hasRows ? (
-        <div style={{ overflowX: "auto" }}>
+        <>
+        <div className="progress-desktop-table" style={{ overflowX: "auto" }}>
           <div style={tableWrapperStyle}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
               <thead>
@@ -586,6 +589,69 @@ export default function ProgressTable() {
             </table>
           </div>
         </div>
+        <div className="progress-mobile-list" aria-label="製造工程カード一覧">
+          {sortedRows.map((row) => {
+            const total = Math.max(row.total, 0);
+            const currentStep = total ? Math.min(row.currentIndex + 1, total) : 0;
+            const progressPercent = total ? Math.min(((currentStep / total) || 0) * 100, 100) : 0;
+            const canDecrease = total > 0 && row.currentIndex > 0;
+            const canIncrease = total > 0 && row.currentIndex < total - 1;
+            return (
+              <article className="progress-mobile-card" key={`mobile-${row.productId}`}>
+                <div className="progress-mobile-card__header">
+                  <div>
+                    <span className="progress-mobile-card__id">{row.productId}</span>
+                    <h3>{row.productName || "名称未設定"}</h3>
+                  </div>
+                  <span className="progress-mobile-card__state">{row.state || STATE_READY}</span>
+                </div>
+
+                <div className="progress-mobile-card__meter">
+                  <div className="progress-mobile-card__meter-head">
+                    <span>{total ? `工程 ${currentStep} / ${total}` : "工程未登録"}</span>
+                    <strong>{Math.round(progressPercent)}%</strong>
+                  </div>
+                  <div style={progressBarTrackStyle}>
+                    <div
+                      style={{
+                        ...progressBarFillStyle,
+                        width: `${progressPercent}%`,
+                        background: progressPercent >= 99 ? "linear-gradient(135deg, #22c55e, #16a34a)" : progressBarFillStyle.background
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="progress-mobile-stepper" aria-label="工程位置を変更">
+                  <button
+                    type="button"
+                    onClick={() => updateIndex(row.productId, row.currentIndex - 1, total)}
+                    disabled={!canDecrease}
+                    aria-label="前の工程へ戻す"
+                  >
+                    −
+                  </button>
+                  <div><small>現在の工程</small><strong>{total ? `${currentStep} / ${total}` : "-"}</strong></div>
+                  <button
+                    type="button"
+                    onClick={() => updateIndex(row.productId, row.currentIndex + 1, total)}
+                    disabled={!canIncrease}
+                    aria-label="次の工程へ進める"
+                  >
+                    ＋
+                  </button>
+                </div>
+
+                <div className="progress-mobile-card__actions">
+                  <button type="button" onClick={() => reset(row.productId)}>リセット</button>
+                  <button type="button" className="is-primary" onClick={() => openQrModal(row)}>QRラベル</button>
+                  <button type="button" className="is-danger" onClick={() => remove(row.productId)}>削除</button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+        </>
       ) : (
         <div style={emptyStateStyle}>
           <div style={{ fontWeight: 600, fontSize: "1rem", marginBottom: 8 }}>製品がまだ登録されていません</div>
@@ -594,8 +660,8 @@ export default function ProgressTable() {
       )}
 
       {qrTarget ? (
-        <div style={modalOverlayStyle} onClick={closeQrModal}>
-          <div style={modalStyle} onClick={(event) => event.stopPropagation()}>
+        <div className="app-modal-overlay" style={modalOverlayStyle} onClick={closeQrModal}>
+          <div className="app-modal" role="dialog" aria-modal="true" style={modalStyle} onClick={(event) => event.stopPropagation()}>
             <h3 style={{ margin: "0 0 8px", fontSize: "1.35rem", color: "#0f172a" }}>
               {qrTarget.productId} のQRラベル
             </h3>

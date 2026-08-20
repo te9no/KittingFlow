@@ -122,7 +122,7 @@ export default function ImportExportPanel() {
     <div className="mobile-page import-export-page" style={{ maxWidth: layout.maxWidth, margin: "0 auto", padding: `${spacing(4)} 0` }}>
       <h3 style={{ marginBottom: spacing(3), fontWeight: typography.headingWeight }}>データ入出力</h3>
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: spacing(3) }}>
-        <div style={card()}>
+        <div className="data-card" style={card()}>
           <b>CSVインポート（KittingFlow v1.0 形式）</b>
           <div style={{ marginTop: spacing(2), display: "grid", gap: spacing(2) }}>
             <label>Parts.csv: <input type="file" accept=".csv" ref={partsRef} onChange={() => handle(partsRef, "parts")} /></label>
@@ -135,7 +135,7 @@ export default function ImportExportPanel() {
           </p>
         </div>
 
-        <div style={card()}>
+        <div className="data-card" style={card()}>
           <b>CSVエクスポート</b>
           <p style={{ margin: `${spacing(2)} 0`, color: palette.textMuted }}>
             現在のDB内容を4つのCSV（Parts / Recipe / Products / Progress）で保存します。
@@ -145,7 +145,7 @@ export default function ImportExportPanel() {
           </button>
         </div>
 
-        <div style={card()}>
+        <div className="data-card" style={card()}>
           <b>GitHub Gist と同期</b>
           <p style={{ margin: `${spacing(2)} 0`, color: palette.textMuted }}>
             CSVの代わりに GitHub Gist をバックアップ先として使用できます。データは JSON ファイル（parts.json など）として保存されます。
@@ -170,7 +170,7 @@ export default function ImportExportPanel() {
                 style={{ marginTop: spacing(1), width: "100%", boxSizing: "border-box", padding: "6px 8px" }}
               />
             </label>
-            <div style={{ display: "flex", gap: spacing(3), flexWrap: "wrap" }}>
+            <div className="data-actions" style={{ display: "flex", gap: spacing(3), flexWrap: "wrap" }}>
               <button
                 onClick={importFromGist}
                 disabled={!canImportGist}
