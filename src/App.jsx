@@ -235,10 +235,6 @@ function App() {
   const [tab, setTab] = useState("home");
 
   useEffect(() => {
-    initSampleDataIfEmpty();
-  }, []);
-
-  useEffect(() => {
     applyGlobalTheme();
   }, []);
 
