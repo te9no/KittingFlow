@@ -500,8 +500,8 @@ export default function RecipeTable() {
   const tinyButtonStyle = { padding: "2px 8px", border: `1px solid ${palette.border}`, borderRadius: spacing(1), background: palette.surface, color: palette.text, cursor: "pointer", fontWeight: 800 };
 
   return (
-    <div style={containerStyle}>
-      <header style={toolbarStyle}>
+    <div className="mobile-page recipe-page" style={containerStyle}>
+      <header className="page-toolbar recipe-toolbar" style={toolbarStyle}>
         <div>
           <h3 style={{ margin: 0, fontWeight: typography.headingWeight }}>{t.recipeEdit}</h3>
           <p style={{ margin: `${spacing(1)} 0 0`, color: palette.textMuted, fontSize: typography.size.sm }}>{t.headerHelp}</p>
@@ -521,8 +521,8 @@ export default function RecipeTable() {
         <section style={{ ...card(), marginBottom: spacing(4), overflow: "visible" }}>
           <h4 style={{ margin: 0, fontSize: typography.size.lg }}>{t.dragEdit}</h4>
           <p style={{ margin: `${spacing(1)} 0 ${spacing(4)}`, color: palette.textMuted }}>{t.dragHelp}</p>
-          <div style={quickEditLayoutStyle}>
-            <aside style={partSidebarStyle}>
+          <div className="recipe-quick-layout" style={quickEditLayoutStyle}>
+            <aside className="recipe-parts-sidebar" style={partSidebarStyle}>
               <div style={sectionTitleStyle}><span style={sectionBadgeStyle}>1</span><span>{t.choosePart}</span></div>
               <div style={{ display: "grid", gap: spacing(2), padding: spacing(3), border: `1px solid ${palette.border}`, borderRadius: spacing(3), background: palette.surface }}>
                 <input value={partSearch} onChange={(event) => setPartSearch(event.target.value)} placeholder={t.searchParts} style={smallInputStyle} />
@@ -550,7 +550,7 @@ export default function RecipeTable() {
               <div style={sectionTitleStyle}><span style={sectionBadgeStyle}>2</span><span>{t.editGroups}</span></div>
               <div style={groupToolbarStyle}>
                 <div><b>{t.newGroup}</b><p style={mutedHelpStyle}>{t.newGroupHelp}</p></div>
-                <div style={groupFormStyle}>
+                <div className="recipe-group-form" style={groupFormStyle}>
                   <input value={newGroupId} onChange={(event) => setNewGroupId(event.target.value)} placeholder={t.productId} style={smallInputStyle} />
                   <input value={newGroupName} onChange={(event) => setNewGroupName(event.target.value)} placeholder={t.productName} style={smallInputStyle} />
                   <button type="button" onClick={addProductGroup} style={secondaryButtonStyle}>{t.add}</button>
@@ -564,7 +564,7 @@ export default function RecipeTable() {
                   const analysis = analyzeGroup(group);
                   return (
                     <div key={group.productId} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleDrop(event, group.productId)} style={productGroupStyle(Boolean(draggingPartId))}>
-                      <div style={groupCardHeaderStyle}>
+                      <div className="recipe-group-header" style={groupCardHeaderStyle}>
                         <button type="button" onClick={() => toggleGroup(group.productId)} style={{ textAlign: "left", border: 0, background: "transparent", padding: 0, cursor: "pointer", color: palette.text }}>
                           <div style={{ fontWeight: 900, fontSize: typography.size.lg }}>{expanded ? "▾" : "▸"} {group.productName}</div>
                           <div style={{ color: palette.textMuted, fontSize: typography.size.sm }}>{group.productId} / {group.recipes.length} {t.registeredParts}</div>
@@ -587,14 +587,14 @@ export default function RecipeTable() {
                             </div>
                             <div style={groupActionPanelStyle}>
                               <b>{t.rename}</b>
-                              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: spacing(2) }}>
+                              <div className="recipe-inline-form" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: spacing(2) }}>
                                 <input value={groupNameDrafts[group.productId] ?? group.productName} onChange={(event) => setGroupNameDraft(group.productId, event.target.value)} placeholder={t.productName} style={smallInputStyle} />
                                 <button type="button" onClick={() => updateProductGroupName(group)} style={secondaryButtonStyle}>{t.save}</button>
                               </div>
                             </div>
                             <div style={groupActionPanelStyle}>
                               <b>{t.duplicateGroup}</b>
-                              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 0.9fr) minmax(0, 1fr) auto", gap: spacing(2) }}>
+                              <div className="recipe-inline-form recipe-inline-form--duplicate" style={{ display: "grid", gridTemplateColumns: "minmax(0, 0.9fr) minmax(0, 1fr) auto", gap: spacing(2) }}>
                                 <input value={duplicateDrafts[group.productId]?.id ?? ""} onChange={(event) => setDuplicateDraft(group.productId, "id", event.target.value)} placeholder={`${group.productId}-COPY`} style={smallInputStyle} />
                                 <input value={duplicateDrafts[group.productId]?.name ?? ""} onChange={(event) => setDuplicateDraft(group.productId, "name", event.target.value)} placeholder={`${group.productName} Copy`} style={smallInputStyle} />
                                 <button type="button" onClick={() => duplicateProductGroup(group)} style={secondaryButtonStyle}>{t.duplicate}</button>
@@ -613,7 +613,7 @@ export default function RecipeTable() {
                           <div style={{ display: "grid", gap: spacing(1) }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: spacing(2), marginTop: spacing(1) }}><b>{t.registeredParts}</b><button type="button" onClick={() => deleteProductGroup(group)} style={dangerButtonStyle}>{t.deleteGroup}</button></div>
                             {group.recipes.map((recipe) => (
-                              <div key={recipe.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto auto auto auto", alignItems: "center", gap: spacing(2), padding: `${spacing(1)} 0`, borderBottom: `1px solid ${palette.border}`, fontSize: typography.size.sm }}>
+                              <div className="recipe-part-row" key={recipe.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto auto auto auto", alignItems: "center", gap: spacing(2), padding: `${spacing(1)} 0`, borderBottom: `1px solid ${palette.border}`, fontSize: typography.size.sm }}>
                                 <span>{getPartName(recipe.partId)}</span>
                                 <span style={{ color: palette.textMuted }}>{formatMoney(calculatedPartUnitPrice(partMap.get(recipe.partId)))}</span>
                                 <button type="button" onClick={() => updateRecipeQuantity(recipe, -1)} style={tinyButtonStyle}>-</button>

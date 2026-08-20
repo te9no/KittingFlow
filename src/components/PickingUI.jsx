@@ -173,13 +173,13 @@ async function next() {
   }
 
   return (
-    <div style={{ maxWidth: 620, margin: "0 auto", padding: "16px", textAlign: "center" }}>
+    <div className="mobile-page picking-page" style={{ maxWidth: 620, margin: "0 auto", padding: "16px", textAlign: "center" }}>
       <h3>{"📦 " + LABEL_PICKING}</h3>
 
       <div style={{ margin: "8px 0" }}>
         <label>
           {LABEL_PRODUCT}:
-          <select value={productId} onChange={(event) => setProductId(event.target.value)} style={{ marginLeft: 8, padding: "6px 8px" }}>
+          <select className="picking-product-select" value={productId} onChange={(event) => setProductId(event.target.value)} style={{ marginLeft: 8, padding: "6px 8px" }}>
             {products.map((product) => (
               <option key={product.id} value={product.id}>{`${product.id} - ${product.name}`}</option>
             ))}

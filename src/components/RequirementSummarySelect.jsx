@@ -147,12 +147,12 @@ export default function RequirementSummarySelect() {
   };
 
   return (
-    <div style={{ maxWidth: layout.maxWidth, margin: "0 auto", padding: spacing(4) }}>
+    <div className="mobile-page requirements-page" style={{ maxWidth: layout.maxWidth, margin: "0 auto", padding: spacing(4) }}>
       <h3 style={{ marginBottom: spacing(3), fontWeight: typography.headingWeight }}>🧮 部品集計（必要セット・個数別）</h3>
 
       <div style={card({ display: "grid", gap: spacing(2) })}>
         {selection.map((sel, idx) => (
-          <div key={idx} style={{ display: "flex", gap: spacing(2) }}>
+          <div className="requirements-row" key={idx} style={{ display: "flex", gap: spacing(2) }}>
             <select
               value={sel.id}
               onChange={(e) => handleSelectChange(idx, "id", e.target.value)}
@@ -175,7 +175,7 @@ export default function RequirementSummarySelect() {
           </div>
         ))}
 
-        <div style={{ display: "flex", gap: spacing(2), marginTop: spacing(1) }}>
+        <div className="requirements-actions" style={{ display: "flex", gap: spacing(2), marginTop: spacing(1) }}>
           <button onClick={addRow} style={{ ...buttonBase, background: palette.surfaceAlt }}>
             + 製品を追加
           </button>

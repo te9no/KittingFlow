@@ -481,8 +481,8 @@ export default function PartsTable() {
   };
 
   return (
-    <div style={{ maxWidth: layout.maxWidth, margin: "0 auto", padding: spacing(4) }}>
-      <header ref={toolbarRef} style={toolbarStyle}>
+    <div className="mobile-page parts-page" style={{ maxWidth: layout.maxWidth, margin: "0 auto", padding: spacing(4) }}>
+      <header className="page-toolbar" ref={toolbarRef} style={toolbarStyle}>
         <h3 style={{ margin: 0, fontWeight: typography.headingWeight }}>{labels.title}</h3>
         <button onClick={addRow} style={{ padding: "8px 16px", borderRadius: spacing(2), border: `1px solid ${palette.primaryDark}`, background: palette.primary, color: "#fff", fontWeight: 600, cursor: "pointer" }}>
           {labels.addRow}

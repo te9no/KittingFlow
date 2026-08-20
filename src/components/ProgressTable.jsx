@@ -418,8 +418,9 @@ export default function ProgressTable() {
   const modalPrintButtonStyle = buttonStyles.primary(canPrint);
 
   return (
-    <div style={containerStyle}>
+    <div className="mobile-page progress-page" style={containerStyle}>
       <div
+        className="page-heading-row"
         style={{
           display: "flex",
           alignItems: "flex-end",

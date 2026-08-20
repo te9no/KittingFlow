@@ -9,6 +9,7 @@ import ProgressTable from "./components/ProgressTable";
 import RequirementSummarySelect from "./components/RequirementSummarySelect";
 import { buttonStyles, hoverStyles, createHoverHandlers } from "./styles/buttons";
 import { applyGlobalTheme, card, layout, palette, spacing, typography } from "./styles/theme";
+import "./styles/responsive.css";
 
 const text = {
   appName: "KittingFlow",
@@ -18,7 +19,7 @@ const text = {
   parts: "\u90e8\u54c1",
   recipes: "\u30ec\u30b7\u30d4",
   progress: "\u9032\u6357\u7ba1\u7406",
-  csv: "CSV",
+  csv: "\u30c7\u30fc\u30bf",
   requirements: "\u5fc5\u8981\u6570\u96c6\u8a08",
   startPicking: "\u30d4\u30c3\u30ad\u30f3\u30b0\u3092\u59cb\u3081\u308b",
   editRecipes: "\u30ec\u30b7\u30d4\u3092\u7de8\u96c6\u3059\u308b",
@@ -59,8 +60,8 @@ function Logo() {
     letterSpacing: "-0.08em"
   };
   return (
-    <div style={logoStyle} aria-label={text.appName}>
-      <svg style={markStyle} viewBox="0 0 64 64" role="img" aria-hidden="true" focusable="false">
+    <div className="app-logo" style={logoStyle} aria-label={text.appName}>
+      <svg className="app-logo__mark" style={markStyle} viewBox="0 0 64 64" role="img" aria-hidden="true" focusable="false">
         <defs>
           <linearGradient id="logo-core" x1="10" y1="8" x2="56" y2="58" gradientUnits="userSpaceOnUse">
             <stop offset="0" stopColor="#67e8f9" />
@@ -82,7 +83,7 @@ function Logo() {
       </svg>
       <span style={{ display: "grid", gap: 3, minWidth: 0 }}>
         <span style={wordStyle}>Kitting<span style={accentStyle}>Flow</span></span>
-        <span style={{ color: "#cbd5e1", fontSize: typography.size.xs, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{text.tagline}</span>
+        <span className="app-logo__tagline" style={{ color: "#cbd5e1", fontSize: typography.size.xs, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{text.tagline}</span>
       </span>
     </div>
   );
@@ -131,13 +132,13 @@ function HomePage({ onNavigate }) {
   ];
 
   return (
-    <div style={{ display: "grid", gap: spacing(6) }}>
-      <section style={heroStyle}>
+    <div className="home-page" style={{ display: "grid", gap: spacing(6) }}>
+      <section className="home-hero" style={heroStyle}>
         <div style={{ maxWidth: 720, position: "relative", zIndex: 1 }}>
           <div style={{ color: "#7dd3fc", fontWeight: 900, marginBottom: spacing(3), letterSpacing: "0.08em" }}>{text.appName}</div>
           <h1 style={{ margin: 0, fontSize: "clamp(2rem, 5vw, 4.4rem)", lineHeight: 1.02, letterSpacing: "-0.05em" }}>{text.homeTitle}</h1>
           <p style={{ margin: `${spacing(4)} 0`, color: "#dbeafe", fontSize: typography.size.lg, maxWidth: 680 }}>{text.homeLead}</p>
-          <div style={{ display: "flex", gap: spacing(3), flexWrap: "wrap" }}>
+          <div className="home-actions" style={{ display: "flex", gap: spacing(3), flexWrap: "wrap" }}>
             <button type="button" onClick={() => onNavigate("picking")} style={primaryAction}>{text.startPicking}</button>
             <button type="button" onClick={() => onNavigate("recipes")} style={secondaryAction}>{text.editRecipes}</button>
           </div>
@@ -216,9 +217,9 @@ function App() {
   return (
     <div>
       <header style={headerStyle} data-app-header="true">
-        <div style={headerInnerStyle}>
+        <div className="app-header__inner" style={headerInnerStyle}>
           <Logo />
-          <nav style={navStyle}>
+          <nav className="app-nav" style={navStyle} aria-label="メインナビゲーション">
             {renderTabButton("home", text.home)}
             {renderTabButton("picking", text.picking)}
             {renderTabButton("parts", text.parts)}
@@ -230,8 +231,8 @@ function App() {
         </div>
       </header>
 
-      <main style={mainStyle}>
-        <div style={contentStyle}>
+      <main className="app-main" style={mainStyle}>
+        <div className="app-content" style={contentStyle}>
           {tab === "home" && <HomePage onNavigate={setTab} />}
           {tab === "picking" && <PickingUI />}
           {tab === "parts" && <PartsTable />}
