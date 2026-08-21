@@ -3,7 +3,7 @@ name: Publish Netlify production
 on:
   push:
     branches:
-      - publish/mobile-test-route
+      - main
   workflow_dispatch:
 
 concurrency:

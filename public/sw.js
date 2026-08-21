@@ -1,5 +1,5 @@
-const CACHE_NAME = "kittingflow-shell-v1";
-const APP_SHELL = ["./", "./favicon.svg", "./manifest.webmanifest"];
+const CACHE_NAME = "kittingflow-shell-v2";
+const APP_SHELL = ["/", "/favicon.svg", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -29,10 +29,10 @@ self.addEventListener("fetch", (event) => {
       fetch(request)
         .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put("./", copy));
+          caches.open(CACHE_NAME).then((cache) => cache.put("/", copy));
           return response;
         })
-        .catch(() => caches.match("./"))
+        .catch(() => caches.match("/"))
     );
     return;
   }
