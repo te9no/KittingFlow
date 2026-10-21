@@ -1,3 +1,4 @@
+import { resetApiWorkspace } from "./api/database.mjs";
 import { db } from "./db";
 
 const GIST_FILES = {
@@ -66,7 +67,8 @@ export async function saveDatasetToGist(gistId, token, dataset) {
 
 export async function applyDatasetToDB(dataset) {
   const { parts = [], recipes = [], products = [], progress = [] } = dataset;
-  await db.transaction("rw", db.parts, db.recipes, db.products, db.progress, async () => {
+  await db.transaction("rw", db.parts, db.recipes, db.products, db.progress, db.apiMeta, db.apiRequests, async () => {
+    await resetApiWorkspace(db);
     await db.parts.clear();
     await db.recipes.clear();
     await db.products.clear();

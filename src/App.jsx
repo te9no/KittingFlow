@@ -1,3 +1,4 @@
+import CodexConnection from "./components/CodexConnection";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { db, initSampleDataIfEmpty, PROGRESS_STATE_DONE } from "./db";
@@ -233,6 +234,14 @@ function HomePage({ onNavigate }) {
 
 function App() {
   const [tab, setTab] = useState("home");
+  const [startup, setStartup] = useState({ ready: false, error: '' });
+
+  useEffect(() => {
+    let active = true;
+    initSampleDataIfEmpty().then(() => { if (active) setStartup({ ready: true, error: '' }); })
+      .catch(() => { if (active) setStartup({ ready: false, error: 'データベースを開けませんでした。古いKittingFlowのタブを閉じて、再読み込みしてください。データは削除していません。' }); });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     applyGlobalTheme();
@@ -298,6 +307,8 @@ function App() {
   const contentStyle = useMemo(() => ({ maxWidth: tab === "recipes" ? "min(1600px, calc(100vw - 24px))" : layout.maxWidth, margin: "0 auto" }), [tab]);
   const footerStyle = useMemo(() => ({ textAlign: "center", padding: spacing(6), color: palette.textMuted, fontSize: typography.size.sm }), []);
 
+  if (!startup.ready) return <main style={{ padding: 24 }}><p role="status">{startup.error || 'データを読み込んでいます…'}</p>{startup.error && <button onClick={() => location.reload()}>再読み込み</button>}</main>;
+
   return (
     <div>
       <header style={headerStyle} data-app-header="true">
@@ -322,6 +333,7 @@ function App() {
 
       <main className="app-main" style={mainStyle}>
         <div className="app-content" style={contentStyle}>
+          <CodexConnection />
           {tab === "home" && <HomePage onNavigate={setTab} />}
           {tab === "picking" && <PickingUI />}
           {tab === "parts" && <PartsTable />}

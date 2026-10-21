@@ -1,4 +1,5 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { liveQuery } from "dexie";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { db } from "../db";
 import { card, layout, palette, spacing, typography } from "../styles/theme";
 
@@ -112,7 +113,12 @@ export default function PartsTable() {
     setParts((await db.parts.toArray()).map(normalizePart));
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const subscription = liveQuery(() => db.parts.toArray()).subscribe({
+      next: rows => setParts(rows.map(normalizePart)), error: () => setMessage("データを再読み込みしてください。")
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (!pendingFocus) return;

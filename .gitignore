@@ -27,3 +27,13 @@ pnpm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# automated browser checks
+test-results/
+playwright-report/
+
+# local TLS material
+*.pfx
+*.p12
+*.key
+*.cer

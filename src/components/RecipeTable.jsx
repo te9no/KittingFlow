@@ -1,3 +1,4 @@
+import { liveQuery } from "dexie";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { db } from "../db";
 import { card, layout, palette, spacing, typography } from "../styles/theme";
@@ -122,8 +123,12 @@ export default function RecipeTable() {
   }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    const subscription = liveQuery(() => Promise.all([db.recipes.toArray(), db.parts.toArray(), db.products.toArray()])).subscribe({
+      next: ([r, p, t]) => { setRecipes(r); setParts(p); setProducts(t); },
+      error: () => setMessage("データを再読み込みしてください。")
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (!message) return undefined;

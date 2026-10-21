@@ -1,4 +1,5 @@
-﻿import Papa from "papaparse";
+import { resetApiWorkspace } from "./api/database.mjs";
+import Papa from "papaparse";
 import { db } from "./db";
 
 export async function exportAllCSV() {
@@ -33,6 +34,13 @@ export function download(name, text) {
 
 export async function importCSV(file, target) {
   const rows = await parseCSV(file);
+  await db.transaction("rw", db.parts, db.products, db.recipes, db.progress, db.apiMeta, db.apiRequests, async () => {
+    await importRows(rows, target);
+    await resetApiWorkspace(db);
+  });
+}
+
+async function importRows(rows, target) {
   if (target === "parts") {
     await db.parts.clear();
     await db.parts.bulkAdd(

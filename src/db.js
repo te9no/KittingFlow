@@ -1,4 +1,5 @@
-﻿import Dexie from 'dexie';
+import Dexie from 'dexie';
+import { defineSchema } from './api/database.mjs';
 
 export let db;
 
@@ -136,24 +137,13 @@ function generateUniqueFancyId(prefix = 'MK') {
 
 function defineDB() {
   db = new Dexie('kittingflow_local');
-  db.version(5).stores({
-    parts: 'id,name,stock,imageUrl,supplier',
-    recipes: '++id,productId,partId,qty,productName',
-    products: 'id,name,internalId,status,salePrice',
-    progress: 'productId'
-  });
+  defineSchema(db);
   return db.open();
 }
 
 export async function initDB() {
-  try {
-    await defineDB();
-  } catch (e) {
-    if (e.name === 'UpgradeError') {
-      await Dexie.delete('kittingflow_local');
-      await defineDB();
-    } else throw e;
-  }
+  if (db) return db.open();
+  return defineDB();
 }
 
 export async function initSampleDataIfEmpty() {
