@@ -11,7 +11,7 @@ test('real stdio MCP through browser registers bundle, refreshes UI and replays'
   await client.connect(transport);
   const call = async (name, args = {}) => (await client.callTool({ name, arguments: args })).structuredContent;
   try {
-    expect((await client.listTools()).tools).toHaveLength(8);
+    expect((await client.listTools()).tools).toHaveLength(9);
     const info = (await call('kitting_get_connection')).data;
     await page.goto('/');
     await page.locator('summary').filter({ hasText: 'Codex接続' }).click();
@@ -28,6 +28,12 @@ test('real stdio MCP through browser registers bundle, refreshes UI and replays'
     await expect(page.locator('input[value="APIテスト部品"]:visible')).toBeVisible();
     expect((await call('kitting_create_bundle', input)).replayed).toBe(true);
     expect((await call('kitting_get_recipe', { ...context, templateId: 'E2E-T' })).data.lines).toHaveLength(1);
+    const price = await call('kitting_update_part_prices', { ...context, requestId: 'browser-price', updates: [{ partId: 'E2E001', expected: { purchaseAmount: 0, purchaseQuantity: 0, manualUnitPrice: null }, prices: { purchaseAmount: 100, purchaseQuantity: 8, manualUnitPrice: null } }] });
+    expect(price.ok).toBe(true);
+    expect(price.data.updated[0].unitPrice).toBe(12.5);
+    const part = (await call('kitting_list_parts', { ...context, query: 'E2E001' })).data.items[0];
+    expect(part.purchaseAmount).toBe(100);
+    expect(part.stock).toBe(5);
     await page.getByRole('button', { name: '接続を解除', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('未接続');
     await expect.poll(async () => (await call('kitting_get_connection')).data.connected).toBe(false);

@@ -52,7 +52,7 @@ export default function CodexConnection() {
   }
   return <details style={{ marginBottom: 20, padding: 14, background: '#fff', border: '1px solid #cbd5e1', borderRadius: 10 }}>
     <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Codex接続 {connected ? '● 接続済み' : '○ 未接続'}</summary>
-    <p>このブラウザの部品・レシピをCodexから検索・追加できます。Codexで接続情報を取得し、表示されたコードを入力してください。</p>
+    <p>このブラウザの部品・レシピの検索・追加と、部品価格の編集をCodexから行えます。Codexで接続情報を取得し、表示されたコードを入力してください。</p>
     <p>保存先: {location.origin} / kittingflow_local</p>
     {location.protocol === 'https:' && <p>この公開サイトのデータを、このPCのCodexと直接やり取りします。初回はローカル中継の証明書設定が必要です。ブラウザにローカルネットワークへの接続許可が表示された場合は、接続先を確認して許可してください。</p>}
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

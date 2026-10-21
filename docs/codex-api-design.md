@@ -15,7 +15,7 @@ Codexから部品登録、新しい製品テンプレートの作成、既存テ
 
 新規テンプレートは既存画面と同じく `products` に `{id: templateId, internalId: templateId, name, status: "template", salePrice: 0}` を保存する。レシピ行にはテンプレートIDを保存し、製品個体IDからの暗黙変換は行わない。
 
-今回の対象は検索・追加・追加結果の照会。既存部品の更新、在庫加算、削除、ピッキング実行、CSV全置換、Gist送信は公開しない。部品の登録時に指定する `stock` は初期在庫であり、レシピ登録では在庫を変更しない。
+対象は検索・追加・部品価格の編集・結果の照会。在庫加算、削除、ピッキング実行、CSV全置換、Gist送信は公開しない。部品の登録時に指定する `stock` は初期在庫であり、レシピ登録や価格編集では在庫を変更しない。
 
 ## 接続方式
 
@@ -50,6 +50,7 @@ HTTP画面はloopback WebSocket、HTTPS画面は証明書を設定したloopback
 | kitting_list_templates | query、cursor、limit | テンプレートIDと名称、nextCursor |
 | kitting_get_recipe | templateId | テンプレートと既存のレシピ行 |
 | kitting_create_parts | requestId、dryRun、parts | 追加部品、件数 |
+| kitting_update_part_prices | requestId、dryRun、updates | 変更前後の価格、計算単価 |
 | kitting_add_recipe | requestId、dryRun、template、lines | テンプレートと追加レシピ行 |
 | kitting_create_bundle | requestId、dryRun、parts、template、lines | 部品とレシピを一括登録した結果 |
 | kitting_get_request | requestId | 保存済みの登録結果、またはnot_found |
@@ -59,6 +60,8 @@ HTTP画面はloopback WebSocket、HTTPS画面は証明書を設定したloopback
 検索はquery省略時に全件を対象とし、ID・名称の部分一致。limitは既定50、範囲1〜200。カーソルは対象・検索条件・最後のIDに結び付け、別条件で再利用したら拒否する。一覧はID昇順。レシピ行は既存の採番ID昇順で返す。1要求のparts・linesはそれぞれ最大200件、要求全体は最大1MiBとする。
 
 ## 登録データの契約
+
+価格編集の `updates` は最大200件。各要素は `partId`、`expected`、`prices` を持ち、後二者は `purchaseAmount`、`purchaseQuantity`、`manualUnitPrice` の3項目を必須とする。金額と数は非負数、手入力単価は非負数またはnull。未設定の既存金額・数は0、手入力単価はnullとして照合する。現在値がexpectedと違えば `PRICE_CONFLICT` を返し全件を取り消す。nullの単価は仕入金額÷仕入れ数で算出し、正の仕入金額には正の仕入れ数が必要。在庫・名称・レシピ数量は変更しない。dryRunとrequestIdによる再送にも対応する。
 
 ### 部品
 

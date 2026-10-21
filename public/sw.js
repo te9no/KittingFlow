@@ -1,4 +1,4 @@
-const CACHE_NAME = "kittingflow-shell-v4";
+const CACHE_NAME = "kittingflow-shell-v5";
 const APP_SHELL = ["/", "/favicon.svg", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {

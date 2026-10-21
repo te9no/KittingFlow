@@ -4,6 +4,8 @@ const id = z.string().trim().min(1).max(128).regex(/^[^\x00-\x1f\x7f]+$/);
 const partId = id.refine(v => !v.startsWith('__tmp_part__'));
 const name = z.string().trim().min(1).max(256);
 const number = z.number().finite().nonnegative();
+const prices = z.object({ purchaseAmount: number, purchaseQuantity: number, manualUnitPrice: number.nullable() }).strict();
+const priceUpdates = z.array(z.object({ partId, prices, expected: prices }).strict()).min(1).max(200);
 const part = z.object({
   partId, name, stock: number.default(0), supplier: z.string().max(256).default(''),
   imageUrl: z.string().max(2048).refine(v => !v || /^https?:\/\//i.test(v) && URL.canParse(v)).default(''),
@@ -25,6 +27,7 @@ export const toolSchemas = {
   kitting_list_templates: z.object(list).strict(),
   kitting_get_recipe: z.object({ ...context, templateId: id }).strict(),
   kitting_create_parts: z.object({ ...write, parts }).strict(),
+  kitting_update_part_prices: z.object({ ...write, updates: priceUpdates }).strict(),
   kitting_add_recipe: z.object({ ...write, template, lines }).strict(),
   kitting_create_bundle: z.object({ ...write, parts, template, lines }).strict(),
   kitting_get_request: z.object({ ...context, requestId: id }).strict()
@@ -35,11 +38,12 @@ export const descriptions = {
   kitting_list_templates: 'レシピの製品テンプレートを検索します。個別製品IDとは異なります。',
   kitting_get_recipe: 'テンプレートの既存レシピ行を取得します。',
   kitting_create_parts: '部品を追加します。既存IDは上書きしません。同じrequestIdで安全に再送できます。',
+  kitting_update_part_prices: '既存部品の仕入金額・仕入れ数・手入力単価を一括更新します。在庫やレシピ数量は変更しません。expectedには検索で取得した現在の価格を指定し、未設定の金額・数は0、手入力単価はnullとして扱います。manualUnitPrice:nullで仕入金額÷仕入れ数から単価を計算します。同じrequestIdで再送できます。',
   kitting_add_recipe: '新規または既存テンプレートにレシピ行を追加します。既存行の数量加算はしません。',
   kitting_create_bundle: '部品とレシピを全件まとめて追加します。失敗時は全件取り消します。',
   kitting_get_request: 'requestIdの保存済み結果を照会します。not_foundは実行中の可能性があります。'
 };
-export const isWrite = name => ['kitting_create_parts', 'kitting_add_recipe', 'kitting_create_bundle'].includes(name);
+export const isWrite = name => ['kitting_create_parts', 'kitting_add_recipe', 'kitting_create_bundle', 'kitting_update_part_prices'].includes(name);
 export function fail(code, message, details = []) { throw Object.assign(new Error(message), { code, details }); }
 export function errorResult(error, requestId) {
   return { ok: false, ...(requestId ? { requestId } : {}), error: {

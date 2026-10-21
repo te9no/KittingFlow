@@ -75,6 +75,30 @@ export async function executeCatalog(db, tool, raw, sessionId) {
           .map(({ id, ...p }) => ({ ...p, partId: id, manualUnitPrice: p.manualUnitPrice === '' ? null : p.manualUnitPrice ?? null }));
         return { ok: true, data: paginate(rows, input, tool) };
       }
+      if (tool === 'kitting_update_part_prices') {
+        unique(input.updates.map(u => u.partId), 'VALIDATION_ERROR');
+        const changes = [];
+        for (const update of input.updates) {
+          const part = await db.parts.get(update.partId);
+          if (!part) fail('PART_NOT_FOUND', `部品 ${update.partId} がありません。`);
+          const before = {
+            purchaseAmount: Number(part.purchaseAmount ?? part.purchasePrice ?? 0),
+            purchaseQuantity: Number(part.purchaseQuantity || 0),
+            manualUnitPrice: part.manualUnitPrice === '' || part.manualUnitPrice == null ? null : Number(part.manualUnitPrice)
+          };
+          if (JSON.stringify(canonical(before)) !== JSON.stringify(canonical(update.expected))) fail('PRICE_CONFLICT', '価格が変更されています。再取得してください。', [{ partId: update.partId, current: before }]);
+          const after = update.prices;
+          if (after.manualUnitPrice === null && after.purchaseAmount > 0 && after.purchaseQuantity === 0) fail('VALIDATION_ERROR', '仕入金額から単価を計算するには仕入れ数が必要です。');
+          const unitPrice = after.manualUnitPrice ?? (after.purchaseQuantity ? after.purchaseAmount / after.purchaseQuantity : 0);
+          if (!Number.isFinite(unitPrice)) fail('VALIDATION_ERROR', '計算単価が大きすぎます。');
+          changes.push({ partId: update.partId, before, after, unitPrice });
+        }
+        if (dryRun) return { ok: true, requestId, workspaceId, preview: { wouldUpdate: changes } };
+        for (const { partId, after } of changes) await db.parts.update(partId, { ...after, manualUnitPrice: after.manualUnitPrice ?? '' });
+        const result = { ok: true, requestId, workspaceId, replayed: false, data: { updated: changes } };
+        await db.apiRequests.add({ key, hash: digest, tool, createdAt: new Date().toISOString(), result });
+        return result;
+      }
       const products = await db.products.toArray();
       const recipes = await db.recipes.toArray();
       const allTemplates = templates(products, recipes);

@@ -12,7 +12,7 @@ catch (error) {
   bridge = await createBridge({ ...options, port: 0 });
 }
 const server = new McpServer({ name: 'kittingflow', version: '1.0.0' }, {
-  instructions: '最初にkitting_get_connectionで対象を確認してください。未接続なら利用者にKittingFlowのCodex接続画面で一回限りのコードを入力してもらいます。部品・レシピの追加のみ。書き込みのrequestIdは再送時も同じ値を使い、RESULT_UNKNOWN時は結果を照会してください。テンプレートIDと個別製品IDを混同しないでください。'
+  instructions: '最初にkitting_get_connectionで対象を確認してください。未接続なら利用者にKittingFlowのCodex接続画面で一回限りのコードを入力してもらいます。部品・レシピの追加と部品価格の編集に対応。書き込みのrequestIdは再送時も同じ値を使い、RESULT_UNKNOWN時は結果を照会してください。テンプレートIDと個別製品IDを混同しないでください。'
 });
 for (const [name, schema] of Object.entries(toolSchemas)) {
   server.registerTool(name, { description: descriptions[name], inputSchema: schema,

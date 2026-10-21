@@ -15,6 +15,44 @@ async function setup(t) {
 }
 const bundle = () => ({ requestId: 'bundle-1', parts: [{ partId: 'A', name: 'センサー', stock: 10 }], template: { mode: 'new', templateId: 'T', name: '試作' }, lines: [{ partId: 'A', qty: 2 }] });
 
+const emptyPrice = { purchaseAmount: 0, purchaseQuantity: 0, manualUnitPrice: null };
+const priceEdit = () => ({ requestId: 'price-1', updates: [{ partId: 'A', expected: { ...emptyPrice }, prices: { purchaseAmount: 100, purchaseQuantity: 8, manualUnitPrice: null } }] });
+test('price edits preview, commit and replay without changing inventory or recipes', async t => {
+  const { db, call } = await setup(t);
+  await call('kitting_create_bundle', bundle());
+  const original = await db.parts.get('A');
+  const preview = await call('kitting_update_part_prices', { ...priceEdit(), dryRun: true });
+  assert.equal(preview.preview.wouldUpdate[0].unitPrice, 12.5);
+  assert.deepEqual(await db.parts.get('A'), original);
+  assert.equal(await db.apiRequests.count(), 1);
+  const result = await call('kitting_update_part_prices', priceEdit());
+  assert.equal(result.ok, true);
+  assert.equal(result.data.updated[0].unitPrice, 12.5);
+  assert.deepEqual(await db.parts.get('A'), { ...original, purchaseAmount: 100, purchaseQuantity: 8, manualUnitPrice: '' });
+  assert.equal((await db.recipes.toArray())[0].qty, 2);
+  assert.equal((await call('kitting_update_part_prices', priceEdit())).replayed, true);
+});
+test('price batch rejects stale values and missing parts without partial writes', async t => {
+  const { db, call } = await setup(t);
+  await call('kitting_create_parts', { requestId: 'parts', parts: [{ partId: 'A', name: 'A' }, { partId: 'B', name: 'B', purchaseAmount: 30 }] });
+  for (const [partId, code] of [['B', 'PRICE_CONFLICT'], ['MISSING', 'PART_NOT_FOUND']]) {
+    const input = priceEdit();
+    input.updates.push({ ...input.updates[0], partId });
+    assert.equal((await call('kitting_update_part_prices', input)).error.code, code);
+    assert.equal((await db.parts.get('A')).purchaseAmount, 0);
+    assert.equal(await db.apiRequests.count(), 1);
+  }
+});
+test('price edits reject invalid values and unrelated fields', async t => {
+  const { call } = await setup(t);
+  await call('kitting_create_bundle', bundle());
+  for (const prices of [{ purchaseAmount: -1 }, { purchaseQuantity: 0 }, { stock: 2 }]) {
+    const input = priceEdit();
+    Object.assign(input.updates[0].prices, prices);
+    assert.equal((await call('kitting_update_part_prices', input)).error.code, 'VALIDATION_ERROR');
+  }
+});
+
 test('bundle commits and replay/concurrent retry does not duplicate', async t => {
   const { db, call } = await setup(t);
   const results = await Promise.all([call('kitting_create_bundle', bundle()), call('kitting_create_bundle', bundle())]);
